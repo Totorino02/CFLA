@@ -1,5 +1,8 @@
 import numpy as np
 import itertools
+from collections import defaultdict
+import torch
+
 
 def dirichlet_partition(labels, num_clients, alpha=0.5):
     """
@@ -29,14 +32,14 @@ def dirichlet_partition(labels, num_clients, alpha=0.5):
 
 
 
-def pathological_partition(labels, num_clients, classes_per_client=2, seed=1905):
+def pathological_partition(dataset, num_clients, classes_per_client=2, seed=None):
     """
     Each client receives only 'classes_per_client' classes.
     """
     if seed is not None:
         np.random.seed(seed)
 
-    n_classes = len(np.unique(labels))
+    n_classes =  torch.unique(dataset.targets).numel()
 
     # Generate all possible permutations of class assignments (order matters)
     all_arrangements = list(itertools.permutations(range(n_classes), classes_per_client))
@@ -52,4 +55,25 @@ def pathological_partition(labels, num_clients, classes_per_client=2, seed=1905)
 
     client_indices = [ list(client_label) for client_label in selected_arrangements]
 
-    return client_indices
+    # Create a dictionary to store indices for each target class
+    class_indices = defaultdict(list)
+    for idx, target in enumerate(dataset.targets):
+        class_indices[int(target)].append(idx)
+    
+    # dictionary to store indices which we will attribute to each client
+    clients_data_indices = defaultdict(list)
+
+    # For each class, we distribute its indices among the clients who own that class
+    for target, indices in class_indices.items():
+        # Find clients who have this class in their targets
+        clients_with_target = [cid for cid, targets in enumerate(client_indices) if target in targets]
+        if not clients_with_target:
+            continue
+        # Distribute indices evenly among these clients
+        for i, idx in enumerate(indices):
+            client_id = clients_with_target[i % len(clients_with_target)]
+            clients_data_indices[client_id].append(idx)
+
+    return clients_data_indices
+
+
