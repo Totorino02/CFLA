@@ -9,13 +9,15 @@ class ServerFLHC(Server):
     def __init__(self, global_model, args, **kwargs):
         super().__init__()
         self.global_model = global_model
-        self.fraction = args.fraction
-        self.device = args.device
-        self.initial_rounds = args.initial_rounds
-        self.cluster_rounds = args.cluster_rounds
+        self.fraction = args["fraction"]
+        self.device = args["device"]
+        self.initial_rounds = args["initial_rounds"]
+        self.cluster_rounds = args["cluster_rounds"]
         self.clusters = None
         self.clients : list[ClientFLHC]= []
         self.selected_clients : list[ClientFLHC] = []
+        self.history = []
+        self.specialized_models = dict()
 
 
     def pre_learning(self):
@@ -34,19 +36,24 @@ class ServerFLHC(Server):
             total_samples += data_size
             update_vector = client.train(model)
 
-            # weighted sum of the update vectors
-            weighted_sum = update_vector * data_size if weighted_sum is None else weighted_sum + update_vector * data_size
+            if weighted_sum is None:
+                weighted_sum = update_vector * data_size
+            else:
+                weighted_sum += update_vector * data_size
 
         # average the update vectors
-        aggregated_update = weighted_sum / total_samples
+        aggregated_update =  torch.tensor(weighted_sum / total_samples)
 
         # update the global model
-        new_state_dict = dict()
         offset = 0
+        new_state_dict = {}
+
         for param_name, param in model.named_parameters():
-            delta = torch.tensor(aggregated_update[offset: offset + param.numel()]).view(param.size())
+            param_size = param.numel()
+            delta = aggregated_update[offset: offset + param_size].view(param.size())
             new_state_dict[param_name] = (param.data.cpu() + delta).clone()
-            offset += param.numel()
+            offset += param_size
+
         model.load_state_dict(new_state_dict)
         return model
 
@@ -84,6 +91,7 @@ class ServerFLHC(Server):
             for _ in range(self.cluster_rounds):
                 cluster_model = self.federated_learning(cluster_model, cluster_clients)
             specialized_models[label] = cluster_model
+        self.specialized_models = specialized_models
         return specialized_models
 
     def evaluate(self):
