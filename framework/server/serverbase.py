@@ -13,7 +13,7 @@ class Server(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self):
+    def evaluate(self, **kwargs):
         pass
 
     @abstractmethod

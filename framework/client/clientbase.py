@@ -8,10 +8,8 @@ class Client(ABC):
     def __init__(self, client_id, train_loader, args, **kwargs):
         self.client_id = client_id
         self.train_loader = train_loader
-        self.optimizer = args.optimizer
-        self.criterion = args.criterion
-        self.scheduler = args.scheduler
-        self.max_epochs = args.max_epochs
+        self.optimizer = args["optimizer"]
+        self.criterion = args["criterion"]
         self.nb_epochs = 0
 
     @abstractmethod
