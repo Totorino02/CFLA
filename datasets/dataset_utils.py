@@ -4,42 +4,53 @@ from collections import defaultdict
 import torch
 
 
-def dirichlet_partition(labels, num_clients, alpha=0.5):
+def dirichlet_partition(labels, num_clients, alpha=0.1):
     """
-    Partition data according to a Dirichlet distribution
-    alpha: concentration parameter (the smaller the alpha, the greater the heterogeneity)
+        Partition data according to a Dirichlet distribution
+        alpha: concentration parameter (the smaller the alpha, the greater the heterogeneity)
     """
-    n_classes = len(np.unique(labels))
-    client_label_distribution = np.random.dirichlet([alpha] * num_clients, n_classes)
+    # dictionary to store indices which we will attribute to each client
+    clients_data_indices = defaultdict(list)
 
-    client_indices = [[] for _ in range(num_clients)]
-    for class_idx in range(n_classes):
-        class_indices = np.where(labels == class_idx)[0]
-        np.random.shuffle(class_indices)
+    min_size = 0
+    K = torch.unique(labels).numel()
+    N = len(labels)
 
-        # Distribution of samples according to the Dirichlet distribution
-        proportions = client_label_distribution[class_idx]
-        proportions = proportions / proportions.sum()  # Normalization
-        cumulative_proportions = np.cumsum(proportions)
+    # guarantee that each client must have at least one batch of data for testing.
+    least_samples = 100
 
-        start_idx = 0
-        for client_idx, end_proportion in enumerate(cumulative_proportions):
-            end_idx = int(end_proportion * len(class_indices))
-            client_indices[client_idx].extend(class_indices[start_idx:end_idx])
-            start_idx = end_idx
+    idx_batch = [[] for _ in range(num_clients)]
+    try_cnt = 1
+    while min_size < least_samples and try_cnt <= 100: # we try 100 times to get the minimum sample size for each client.
+        # if try_cnt > 1:
+            # print(f'Client data size does not meet the minimum requirement {least_samples}. Try allocating again for the {try_cnt}-th time.')
 
-    return client_indices
+        idx_batch = [[] for _ in range(num_clients)]
+        for k in range(K):
+            idx_k = np.where(labels == k)[0]
+            np.random.shuffle(idx_k)
+            proportions = np.random.dirichlet(np.repeat(alpha, num_clients))
+            proportions = np.array([p * (len(idx_j) < N / num_clients) for p, idx_j in zip(proportions, idx_batch)])
+            proportions = proportions / proportions.sum()
+            proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
+            idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
+            min_size = min([len(idx_j) for idx_j in idx_batch])
+        try_cnt += 1
+
+    for j in range(num_clients):
+        clients_data_indices[j] = idx_batch[j]
+
+    return clients_data_indices
 
 
-
-def pathological_partition(dataset, num_clients, classes_per_client=2, seed=None):
+def pathological_partition(labels, num_clients, classes_per_client=2, seed=None):
     """
     Each client receives only 'classes_per_client' classes.
     """
     if seed is not None:
         np.random.seed(seed)
 
-    n_classes =  torch.unique(dataset.targets).numel()
+    n_classes =  torch.unique(labels).numel()
 
     # Generate all possible permutations of class assignments (order matters)
     all_arrangements = list(itertools.permutations(range(n_classes), classes_per_client))
@@ -57,7 +68,7 @@ def pathological_partition(dataset, num_clients, classes_per_client=2, seed=None
 
     # Create a dictionary to store indices for each target class
     class_indices = defaultdict(list)
-    for idx, target in enumerate(dataset.targets):
+    for idx, target in enumerate(labels):
         class_indices[int(target)].append(idx)
     
     # dictionary to store indices which we will attribute to each client
@@ -75,5 +86,14 @@ def pathological_partition(dataset, num_clients, classes_per_client=2, seed=None
             clients_data_indices[client_id].append(idx)
 
     return clients_data_indices
+
+def make_non_iid(non_iid_type, labels, num_clients, **kwargs):
+    if non_iid_type == "dirichlet":
+        client_indices = dirichlet_partition(labels, num_clients, **kwargs)
+    elif non_iid_type == "pathological":
+        client_indices = pathological_partition(labels, num_clients, **kwargs)
+    else:
+        raise ValueError("Unknown partition type")
+    return client_indices
 
 
