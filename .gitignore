@@ -1,4 +1,5 @@
 .idea
 data
-test.py
-test_nb.ipynb
+test*
+**/__pycache__/
+results
