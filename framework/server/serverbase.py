@@ -17,7 +17,7 @@ class Server(ABC):
         pass
 
     @abstractmethod
-    def aggregate(self):
+    def aggregate(self, **kwargs):
         pass
 
     @abstractmethod
