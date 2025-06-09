@@ -1,21 +1,27 @@
 import numpy as np
 import torch
-
+from torch.utils.data import random_split, DataLoader
 from framework.client.clientbase import Client
 from torch.nn import Module
 
+
 class ClientFLHC(Client):
 
-    def __init__(self, client_id, train_loader, args, **kwargs):
-        super().__init__(client_id, train_loader, args, **kwargs)
+    def __init__(self, client_id, dataset, args, **kwargs):
+        super().__init__(client_id, dataset, args, **kwargs)
         self.local_model : Module = None
-        self.train_loader = train_loader
         self.device = args["device"]
         self.criterion = torch.nn.CrossEntropyLoss(reduction='mean') # args["criterion"]
         self.optimizer = args["optimizer"]
         self.local_epochs = args["local_epochs"]
         self.learning_rate = args["learning_rate"]
         self.history = []
+        train_size = int(len(dataset) * args["train_fraction"])
+        test_size = len(dataset) - train_size
+        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+        self.train_loader = DataLoader(train_dataset, batch_size=args["batch_size"], shuffle=True)
+        self.test_loader = DataLoader(test_dataset, batch_size=args["batch_size"], shuffle=True)
+
 
     def train(self, global_model, verbose=False):
         """
@@ -49,13 +55,16 @@ class ClientFLHC(Client):
 
         # update vector of local model parameters
         update_vector = []
+        updated_params = []
         for new_param, old_param in zip(self.local_model.parameters(), global_model.parameters()):
             update_vector.append((new_param.data - old_param.data).flatten())
+            updated_params.append(new_param.data.flatten())
         
         #for vect in update_vector:
         #    print(vect.size())
         update_vector = torch.cat(update_vector).numpy()
-        return update_vector, loss.item()
+        updated_params = torch.cat(updated_params)
+        return updated_params, update_vector, loss.item()
 
     def test(self):
         pass

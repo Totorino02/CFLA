@@ -19,6 +19,8 @@ class ServerFLHC(Server):
         self.device = args["device"]
         self.initial_rounds = args["initial_rounds"]
         self.cluster_rounds = args["cluster_rounds"]
+        self.distance_threshold = args["distance_threshold"]
+        self.clustering_metric = args["clustering_metric"]
         self.clusters = None
         self.clients : list[ClientFLHC]= []
         self.selected_clients : list[ClientFLHC] = []
@@ -48,16 +50,16 @@ class ServerFLHC(Server):
         for client in selected_clients:
             data_size = len(client.train_loader.dataset)
             total_samples += data_size
-            update_vector, loss = client.train(model)
+            updated_params, update_vector, loss = client.train(model)
             mean_loss += loss
             if weighted_sum is None:
-                weighted_sum = update_vector * data_size
+                weighted_sum = updated_params * data_size
             else:
-                weighted_sum += update_vector * data_size
+                weighted_sum += updated_params * data_size
 
         # average the update vectors and loss
         mean_loss /= m
-        aggregated_update =  torch.tensor(weighted_sum / total_samples)
+        aggregated_update = (weighted_sum / total_samples).detach().clone()
 
         # update the global model
         offset = 0
@@ -65,23 +67,21 @@ class ServerFLHC(Server):
         for param_name, param in model.named_parameters():
             param_size = param.numel()
             delta = aggregated_update[offset: offset + param_size].view(param.size())
-            new_state_dict[param_name] = (param.data.cpu() + delta).clone()
+            new_state_dict[param_name] = delta.clone()
             offset += param_size
         model.load_state_dict(new_state_dict)
         return model, mean_loss
 
-    def hierarchical_clustering(self, updates, threshold=1.0, metric="euclidean"):
+    def hierarchical_clustering(self, updates):
         """
         This method performs hierarchical clustering on the update vectors of the clients and returns the clusters.
         :param updates: Update vectors
-        :param threshold: The threshold for the clustering
-        :param metric: The metric for the clustering
         :return: Clusters
         """
         clustering = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=threshold,
-            metric=metric,
+            n_clusters=2,
+            #distance_threshold=self.distance_threshold,
+            #metric=self.clustering_metric,
             linkage='complete'
         )
 
@@ -112,7 +112,7 @@ class ServerFLHC(Server):
         # hierarchical clustering
         updates = []
         for client in self.clients:
-            client_update, loss = client.train(self.global_model)
+            _, client_update, loss = client.train(self.global_model)
             updates.append(client_update)
         updates = np.stack(updates)
         print("Clustering starts...")
@@ -122,6 +122,7 @@ class ServerFLHC(Server):
         print(f"Clustering ends... Nb of clusters : {len(self.clusters)}\n")
 
         # personalized models
+
         specialized_models = dict()
         training_loss_history = defaultdict(list)
         test_loss_history = defaultdict(list)
@@ -135,7 +136,9 @@ class ServerFLHC(Server):
             for _ in tqdm(range(self.cluster_rounds), unit="round", colour="green"):
                 cluster_model, mean_loss = self.federated_learning(cluster_model, cluster_clients)
                 training_loss_history[int(label)].append(mean_loss)
-                acc_top1, acc_topk, test_loss = self.evaluate(cluster_model, k=5, return_loss=True)
+                # pick a random client int the cluster and perform the eval
+                client_id = np.random.randint(0, len(cluster_clients))
+                acc_top1, acc_topk, test_loss = self.evaluate(cluster_model, cluster_clients[0].test_loader, k=1, return_loss=True)
                 test_loss_history[int(label)].append(test_loss)
                 accuracy_history[int(label)].append(acc_top1)
             specialized_models[label] = cluster_model
@@ -151,16 +154,17 @@ class ServerFLHC(Server):
         print(f"---- END STATS ----- ")
         return specialized_models, training_loss_history, test_loss_history, accuracy_history
 
-    def evaluate(self, model, k=5, return_loss=False):
+    def evaluate(self, model, test_dataloader,  k=5, return_loss=False):
         model.eval()
         correct_top1 = 0
         correct_topk = 0
         total = 0
         total_loss = 0.0
+        last_lost = 0.0
         loss_fn = torch.nn.CrossEntropyLoss()
 
         with torch.no_grad():
-            for inputs, targets in self.test_dataloader:
+            for inputs, targets in test_dataloader:
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 outputs = model(inputs)
                 loss = loss_fn(outputs, targets)
@@ -175,13 +179,14 @@ class ServerFLHC(Server):
 
                 total += targets.size(0)
                 total_loss += loss.item() * targets.size(0)
+                last_lost = loss.item()
 
         acc_top1 = correct_top1 / total
         acc_topk = correct_topk / total
         avg_loss = total_loss / total
 
         if return_loss:
-            return acc_top1, acc_topk, avg_loss
+            return acc_top1, acc_topk, last_lost
         else:
             return acc_top1, acc_topk
 
