@@ -127,6 +127,8 @@ class ServerFLHC(Server):
         training_loss_history = defaultdict(list)
         test_loss_history = defaultdict(list)
         accuracy_history = defaultdict(list)
+        global_test_accuracy_history = defaultdict(list)
+        global_test_loss_history = defaultdict(list)
         print("Specialized models training...")
         personalization_start_time = time.time()
         for label, cluster_clients in self.clusters.items():
@@ -138,9 +140,12 @@ class ServerFLHC(Server):
                 training_loss_history[int(label)].append(mean_loss)
                 # pick a random client int the cluster and perform the eval
                 client_id = np.random.randint(0, len(cluster_clients))
-                acc_top1, acc_topk, test_loss = self.evaluate(cluster_model, cluster_clients[0].test_loader, k=1, return_loss=True)
+                acc_top1, acc_topk, test_loss = self.evaluate(cluster_model, cluster_clients[client_id].test_loader, k=1, return_loss=True)
+                g_acc_top1, g_acc_topk, g_test_loss = self.evaluate(cluster_model, self.test_dataloader, k=1, return_loss=True)
                 test_loss_history[int(label)].append(test_loss)
                 accuracy_history[int(label)].append(acc_top1)
+                global_test_accuracy_history[int(label)].append(g_acc_top1)
+                global_test_loss_history[int(label)].append(g_test_loss)
             specialized_models[label] = cluster_model
         self.specialized_models = specialized_models
         training_end_time = time.time()
@@ -152,7 +157,7 @@ class ServerFLHC(Server):
         print(f"Personalization time : {convert_seconds_to_hhmmss(personalization_end_time - personalization_start_time)}")
         print(f"Training time : {convert_seconds_to_hhmmss(training_end_time - training_start_time)}")
         print(f"---- END STATS ----- ")
-        return specialized_models, training_loss_history, test_loss_history, accuracy_history
+        return specialized_models, training_loss_history, test_loss_history, accuracy_history, global_test_accuracy_history, global_test_loss_history
 
     def evaluate(self, model, test_dataloader,  k=5, return_loss=False):
         model.eval()

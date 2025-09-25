@@ -20,6 +20,7 @@ class Client:
         self.local_model = model
         self.train_history = []
         self.test_history = []
+        self.accuracies = []
         train_size = int(len(dataset) * args["train_fraction"])
         test_size = len(dataset) - train_size
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
@@ -35,6 +36,7 @@ class Client:
         self.criterion = torch.nn.CrossEntropyLoss(reduction='mean') # torch.nn.MSELoss()
 
         training_loss = list()
+        loss = 0.0
         for epoch in range(self.local_epochs):
             for batch_idx, (data, target) in enumerate(self.train_loader):
                 data, target = data.to(self.device), target.to(self.device)
@@ -43,17 +45,18 @@ class Client:
                 loss = self.criterion(output, target)
                 loss.backward()
                 self.optimizer.step()
-                #self.train_history.append(loss.item())
                 training_loss.append(loss.item())
                 if verbose :# and batch_idx % 10 == 0:
                     print(f"Client {self.client_id}, Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item()}")
-
+            acc, _ = self.test()
+            self.accuracies.append(acc)
+            self.train_history.append(loss.item())
         updated_params = []
         for param in self.local_model.parameters():
             updated_params.append(param.flatten())
         updated_params = torch.cat(updated_params).detach().numpy()
 
-        self.train_history.append(training_loss)
+        #self.train_history.append(training_loss)
 
         return updated_params, np.mean(training_loss)
 

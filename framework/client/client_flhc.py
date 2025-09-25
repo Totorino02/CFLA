@@ -23,7 +23,7 @@ class ClientFLHC(Client):
         self.test_loader = DataLoader(test_dataset, batch_size=args["batch_size"], shuffle=True)
 
 
-    def train(self, global_model, verbose=False):
+    def train(self, global_model=None, verbose=False, **kwargs):
         """
         This method trains the local model on the local dataset
         and returns the updated vector (the difference between the global model params and the local trained model params)

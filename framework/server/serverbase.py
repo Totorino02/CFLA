@@ -24,5 +24,8 @@ class Server(ABC):
     def get_params(self):
         pass
 
+    def set_clients(self, clients):
+        self.clients = clients
+
 
 
