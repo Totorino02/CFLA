@@ -24,6 +24,8 @@ class ServerFedAvg(Server):
         self.learning_rate = args["learning_rate"]
         self.fraction = args["fraction"]
         self.history = []
+        self.test_loss = []
+        self.accuracies = []
         self.clients : list[Client]= []
         self.selected_clients : list[Client] = []
         self.train_loss_check = list()
@@ -35,6 +37,9 @@ class ServerFedAvg(Server):
             if verbose:
                 print(f"Epoch {epoch+1}/{self.nb_epochs} | Loss: {loss}")
             self.history.append(loss)
+            acc_top1, last_lost = self.evaluate(self.global_model, self.test_dataloader, return_loss=True)
+            self.accuracies.append(acc_top1)
+            self.test_loss.append(last_lost)
         return self.global_model, self.history
 
 
@@ -66,15 +71,16 @@ class ServerFedAvg(Server):
 
         # average the update vectors and loss
         mean_loss /= len(selected_clients)
-        aggregated_update = (weighted_sum / total_samples).detach().clone()
+        aggregated_update = weighted_sum / total_samples#(weighted_sum / total_samples).detach().clone()
 
         # update the global model
         offset = 0
         new_state_dict = {}
         for param_name, param in model.named_parameters():
             param_size = param.numel()
-            delta = aggregated_update[offset: offset + param_size].view(param.size())
-            new_state_dict[param_name] = delta.clone()
+            delta = aggregated_update[offset: offset + param_size]
+            delta = delta.reshape(param.size())
+            new_state_dict[param_name] = torch.tensor(delta)#.clone()
             offset += param_size
         model.load_state_dict(new_state_dict)
         return model, mean_loss
@@ -87,8 +93,35 @@ class ServerFedAvg(Server):
         """
         pass
 
-    def evaluate(self, **kwargs):
-        pass
+    def evaluate(self, model, test_dataloader, return_loss=False):
+        model.eval()
+        correct_top1 = 0
+        total = 0
+        total_loss = 0.0
+        last_lost = 0.0
+        loss_fn = torch.nn.CrossEntropyLoss()
+
+        with torch.no_grad():
+            for inputs, targets in test_dataloader:
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                outputs = model(inputs)
+                loss = loss_fn(outputs, targets)
+
+                # Top-1
+                _, pred_top1 = outputs.max(dim=1)
+                correct_top1 += (pred_top1 == targets).sum().item()
+
+                total += targets.size(0)
+                total_loss += loss.item() * targets.size(0)
+                last_lost = loss.item()
+
+        acc_top1 = correct_top1 / total
+        avg_loss = total_loss / total
+
+        if return_loss:
+            return acc_top1, last_lost
+        else:
+            return acc_top1
 
     def set_clients(self, clients: list[Client]):
         self.clients = clients
