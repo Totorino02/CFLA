@@ -56,33 +56,35 @@ class ServerFedAvg(Server):
         selected_clients = np.random.choice(clients_subset, m, replace=False)
 
         total_samples = 0
-        weighted_sum = None
-        mean_loss = 0.0
+        weighted_updates = None
+        total_weighted_loss = 0.0
+        
         for client in selected_clients:
             data_size = len(client.train_loader.dataset)
             total_samples += data_size
-            updated_params, loss = client.train(model)
-            mean_loss += loss #* data_size
+            update, loss = client.train(model)  # update = difference
+            total_weighted_loss += loss * data_size
             self.train_loss_check.append(loss)
-            if weighted_sum is None:
-                weighted_sum = updated_params * data_size
+            
+            if weighted_updates is None:
+                weighted_updates = update * data_size
             else:
-                weighted_sum += updated_params * data_size
+                weighted_updates += update * data_size
 
-        # average the update vectors and loss
-        mean_loss /= len(selected_clients)
-        aggregated_update = weighted_sum / total_samples#(weighted_sum / total_samples).detach().clone()
+        # Weighted average of updates and losses
+        mean_loss = total_weighted_loss / total_samples
+        avg_update = weighted_updates / total_samples
 
-        # update the global model
+        # Apply updates to the global model
         offset = 0
-        new_state_dict = {}
-        for param_name, param in model.named_parameters():
-            param_size = param.numel()
-            delta = aggregated_update[offset: offset + param_size]
-            delta = delta.reshape(param.size())
-            new_state_dict[param_name] = torch.tensor(delta)#.clone()
-            offset += param_size
-        model.load_state_dict(new_state_dict)
+        with torch.no_grad():
+            for param in model.parameters():
+                param_size = param.numel()
+                delta = avg_update[offset: offset + param_size]
+                delta = delta.reshape(param.size())
+                param.data += delta  # Addition of updates
+                offset += param_size
+        
         return model, mean_loss
 
     def aggregate(self, client_updates):
