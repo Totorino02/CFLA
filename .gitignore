@@ -1,6 +1,6 @@
-.idea
-data
-test*
+.idea/
+data/
+results/
 **/__pycache__/
-results
+test*
 datasets/FEMNIST
