@@ -28,6 +28,12 @@ class Client:
         self.test_loader = DataLoader(test_dataset, batch_size=args["batch_size"], shuffle=True)
 
     def train(self, global_model=None, verbose=False, **kwargs):
+        # Save initial global model parameters
+        initial_params = []
+        for param in global_model.parameters():
+            initial_params.append(param.flatten().detach().clone())
+        initial_params = torch.cat(initial_params)
+        
         # copy of the global model to a local model
         self.local_model = type(global_model)().to(self.device)
         self.local_model.load_state_dict(global_model.state_dict())
@@ -51,14 +57,19 @@ class Client:
             acc, _ = self.test()
             self.accuracies.append(acc)
             self.train_history.append(loss.item())
+        
+        # Calculate updates (differences)
         updated_params = []
         for param in self.local_model.parameters():
-            updated_params.append(param.flatten())
-        updated_params = torch.cat(updated_params).detach().numpy()
+            updated_params.append(param.flatten().detach())
+        updated_params = torch.cat(updated_params)
+        
+        # Return the difference (update)
+        update = updated_params - initial_params
 
         #self.train_history.append(training_loss)
 
-        return updated_params, np.mean(training_loss)
+        return update, np.mean(training_loss)
 
     def test(self):
         self.local_model.eval()
