@@ -1,0 +1,133 @@
+from collections import defaultdict
+
+from framework.client.clientbase import Client
+from framework.server.serverbase import Server
+import numpy as np
+import torch
+import tqdm
+
+class ServerFedAvg(Server):
+    """
+    This class implements the FedAvg algorithm for federated learning.
+    It is a subclass of the Server class and uses the FedAvg algorithm to aggregate the updates from the clients.
+    """
+
+    def __init__(self, global_model, test_dataloader, args, **kwargs):
+        super().__init__()
+        self.global_model = global_model
+        self.test_dataloader = test_dataloader
+        self.device = args["device"]
+        self.criterion = args["criterion"]
+        self.optimizer = args["optimizer"]
+        self.local_epochs = args["local_epochs"]
+        self.nb_epochs = args["nb_epochs"]
+        self.learning_rate = args["learning_rate"]
+        self.fraction = args["fraction"]
+        self.history = []
+        self.test_loss = []
+        self.accuracies = []
+        self.clients : list[Client]= []
+        self.selected_clients : list[Client] = []
+        self.train_loss_check = list()
+
+
+    def train(self, verbose=False):
+        for epoch in range(self.nb_epochs):
+            self.global_model, loss = self.federated_learning(self.global_model, self.clients)
+            if verbose:
+                print(f"Epoch {epoch+1}/{self.nb_epochs} | Loss: {loss}")
+            self.history.append(loss)
+            acc_top1, last_lost = self.evaluate(self.global_model, self.test_dataloader, return_loss=True)
+            self.accuracies.append(acc_top1)
+            self.test_loss.append(last_lost)
+        return self.global_model, self.history
+
+
+    def federated_learning(self, model, clients_subset):
+        """
+        This method performs federated learning on a subset of clients and returns the updated model
+        and the mean loss of the local training.
+        :param model: Model to be updated
+        :param clients_subset: The subset of clients to perform federated learning on
+        :return: An updated model, mean loss
+        """
+        # selects clients
+        m = max(1, int(self.fraction * len(clients_subset)))
+        selected_clients = np.random.choice(clients_subset, m, replace=False)
+
+        total_samples = 0
+        weighted_updates = None
+        total_weighted_loss = 0.0
+        
+        for client in selected_clients:
+            data_size = len(client.train_loader.dataset)
+            total_samples += data_size
+            update, loss = client.train(model)  # update = difference
+            total_weighted_loss += loss * data_size
+            self.train_loss_check.append(loss)
+            
+            if weighted_updates is None:
+                weighted_updates = update * data_size
+            else:
+                weighted_updates += update * data_size
+
+        # Weighted average of updates and losses
+        mean_loss = total_weighted_loss / total_samples
+        avg_update = weighted_updates / total_samples
+
+        # Apply updates to the global model
+        offset = 0
+        with torch.no_grad():
+            for param in model.parameters():
+                param_size = param.numel()
+                delta = avg_update[offset: offset + param_size]
+                delta = delta.reshape(param.size())
+                param.data += delta  # Addition of updates
+                offset += param_size
+        
+        return model, mean_loss
+
+    def aggregate(self, client_updates):
+        """
+        This method aggregates the updates from the clients using the FedAvg algorithm.
+        :param client_updates: A list of client updates
+        :return: The aggregated model
+        """
+        pass
+
+    def evaluate(self, model, test_dataloader, return_loss=False):
+        model.eval()
+        correct_top1 = 0
+        total = 0
+        total_loss = 0.0
+        last_lost = 0.0
+        loss_fn = torch.nn.CrossEntropyLoss()
+
+        with torch.no_grad():
+            for inputs, targets in test_dataloader:
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                outputs = model(inputs)
+                loss = loss_fn(outputs, targets)
+
+                # Top-1
+                _, pred_top1 = outputs.max(dim=1)
+                correct_top1 += (pred_top1 == targets).sum().item()
+
+                total += targets.size(0)
+                total_loss += loss.item() * targets.size(0)
+                last_lost = loss.item()
+
+        acc_top1 = correct_top1 / total
+        avg_loss = total_loss / total
+
+        if return_loss:
+            return acc_top1, last_lost
+        else:
+            return acc_top1
+
+    def set_clients(self, clients: list[Client]):
+        self.clients = clients
+
+    def get_params(self):
+        pass
+

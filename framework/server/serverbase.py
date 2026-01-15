@@ -17,12 +17,15 @@ class Server(ABC):
         pass
 
     @abstractmethod
-    def aggregate(self):
+    def aggregate(self, **kwargs):
         pass
 
     @abstractmethod
     def get_params(self):
         pass
+
+    def set_clients(self, clients):
+        self.clients = clients
 
 
 

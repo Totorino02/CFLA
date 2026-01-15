@@ -1,4 +1,6 @@
-.idea
-data
-test.py
-test_nb.ipynb
+.idea/
+data/
+results/
+**/__pycache__/
+test*
+datasets/FEMNIST
