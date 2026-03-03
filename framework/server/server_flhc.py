@@ -1,5 +1,6 @@
 from collections import defaultdict
-
+from datetime import datetime
+import os
 import torch
 from framework.client.client_flhc import ClientFLHC
 from framework.server.serverbase import Server
@@ -26,13 +27,16 @@ class ServerFLHC(Server):
         self.selected_clients : list[ClientFLHC] = []
         self.history = []
         self.specialized_models = dict()
+        self.output_dir = args["output_dir"]
 
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
 
     def pre_learning(self):
         for epoch in range(self.initial_rounds):
-            self.global_model, loss = self.federated_learning(self.global_model, self.clients)
+            self.global_model, loss = self.federated_learning(self.global_model, self.clients, round=-(self.initial_rounds - epoch))
 
-    def federated_learning(self, model, clients_subset):
+    def federated_learning(self, model, clients_subset, **kwargs):
         """
         This method performs federated learning on a subset of clients and returns the updated model
         and the mean loss of the local training.
@@ -47,15 +51,17 @@ class ServerFLHC(Server):
         total_samples = 0
         weighted_sum = None
         mean_loss = 0.0
-        for client in selected_clients:
+        for client in clients_subset:
             data_size = len(client.train_loader.dataset)
-            total_samples += data_size
-            updated_params, update_vector, loss = client.train(model)
-            mean_loss += loss
-            if weighted_sum is None:
-                weighted_sum = updated_params * data_size
-            else:
-                weighted_sum += updated_params * data_size
+            updated_params, update_vector, loss = client.train(model, round=kwargs.get("round", 0))
+
+            if client in selected_clients:
+                mean_loss += loss
+                total_samples += data_size
+                if weighted_sum is None:
+                    weighted_sum = updated_params * data_size
+                else:
+                    weighted_sum += updated_params * data_size
 
         # average the update vectors and loss
         mean_loss /= m
@@ -135,8 +141,8 @@ class ServerFLHC(Server):
             cluster_model = type(self.global_model)().to(self.device)
             cluster_model.load_state_dict(self.global_model.state_dict())
             print(f"Cluster {int(label)+1} training...")
-            for _ in tqdm(range(self.cluster_rounds), unit="round", colour="green"):
-                cluster_model, mean_loss = self.federated_learning(cluster_model, cluster_clients)
+            for _round in tqdm(range(self.cluster_rounds), unit="round", colour="green"):
+                cluster_model, mean_loss = self.federated_learning(cluster_model, cluster_clients, round=_round)
                 training_loss_history[int(label)].append(mean_loss)
                 # pick a random client int the cluster and perform the eval
                 client_id = np.random.randint(0, len(cluster_clients))
@@ -200,6 +206,8 @@ class ServerFLHC(Server):
 
     def set_clients(self, clients: list[ClientFLHC]):
         self.clients = clients
+        for client in clients:
+            client.output_dir = self.output_dir
 
     def get_params(self):
         return self.global_model.state_dict()
