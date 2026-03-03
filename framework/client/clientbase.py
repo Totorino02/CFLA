@@ -21,6 +21,8 @@ class Client:
         self.train_history = []
         self.test_history = []
         self.accuracies = []
+        self.energy_consumptions = []
+        self.energy_ratios = []
         train_size = int(len(dataset) * args["train_fraction"])
         test_size = len(dataset) - train_size
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
