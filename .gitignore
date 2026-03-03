@@ -4,3 +4,7 @@ results/
 **/__pycache__/
 test*
 datasets/FEMNIST
+experiments/RESULTS
+tmp.py
+tmp
+.vscode/
