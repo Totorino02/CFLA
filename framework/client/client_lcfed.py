@@ -27,7 +27,7 @@ from sklearn.cluster import KMeans
 from framework.common.utils import flatten_params
 
 # If you keep declearn energy monitoring:
-from declearn.main.utils._energy_monitor import EnergyMonitor
+from declearn.main.utils._energy_monitor import EnergyMonitor # type: ignore
 
 RAPL_ENERGY_UNITS = 1e6
 NVML_NVIDIA_UNITS = 1e3
@@ -142,8 +142,8 @@ class ClientLCFed:
     def train(
         self,
         global_model: nn.Module,
-        phi_global: Dict[str, torch.Tensor],
-        omega_cluster: Dict[str, torch.Tensor],
+        phi_global: Dict[str, torch.Tensor] = None,
+        omega_cluster: Dict[str, torch.Tensor] = None,
         verbose: bool = False,
         save_metrics: bool = True,
         **kwargs

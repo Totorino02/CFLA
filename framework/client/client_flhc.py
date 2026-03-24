@@ -4,7 +4,7 @@ from torch.utils.data import random_split, DataLoader
 from framework.client.clientbase import Client
 from torch.nn import Module
 import os
-from declearn.main.utils._energy_monitor import EnergyMonitor
+from declearn.main.utils._energy_monitor import EnergyMonitor # type: ignore
 
 
 RAPL_ENERGY_UNITS = 1e6

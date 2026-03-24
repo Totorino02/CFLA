@@ -28,6 +28,8 @@ class ServerFLHC(Server):
         self.history = []
         self.specialized_models = dict()
         self.output_dir = args["output_dir"]
+        self.seed = args.get("seed", 0)
+        self.rng = np.random.default_rng(self.seed)
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
@@ -46,7 +48,7 @@ class ServerFLHC(Server):
         """
         # selects clients
         m = max(1, int(self.fraction * len(clients_subset)))
-        selected_clients = np.random.choice(clients_subset, m, replace=False)
+        selected_clients = self.rng.choice(clients_subset, m, replace=False)
 
         total_samples = 0
         weighted_sum = None
@@ -85,10 +87,10 @@ class ServerFLHC(Server):
         :return: Clusters
         """
         clustering = AgglomerativeClustering(
-            n_clusters=2,
-            #distance_threshold=self.distance_threshold,
-            #metric=self.clustering_metric,
-            linkage='complete'
+            n_clusters=None,
+            distance_threshold=self.distance_threshold,
+            metric=self.clustering_metric,
+            linkage='average'
         )
 
         labels = clustering.fit_predict(updates)
@@ -145,7 +147,7 @@ class ServerFLHC(Server):
                 cluster_model, mean_loss = self.federated_learning(cluster_model, cluster_clients, round=_round)
                 training_loss_history[int(label)].append(mean_loss)
                 # pick a random client int the cluster and perform the eval
-                client_id = np.random.randint(0, len(cluster_clients))
+                client_id = self.rng.integers(0, len(cluster_clients))
                 acc_top1, acc_topk, test_loss = self.evaluate(cluster_model, cluster_clients[client_id].test_loader, k=1, return_loss=True)
                 g_acc_top1, g_acc_topk, g_test_loss = self.evaluate(cluster_model, self.test_dataloader, k=1, return_loss=True)
                 test_loss_history[int(label)].append(test_loss)

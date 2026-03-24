@@ -1,7 +1,6 @@
 # ============================================================
 # LCFed (arXiv:2501.01850) — Client/Server architecture
 #   - Two classes: ClientLCFed and ServerLCFed
-#   - Inspired by your FLHC code structure
 #   - PyTorch, split model: embed (ϕ) + head (h)
 #   - Server: global embedding Φ + per-cluster centers Ω_k
 #   - Online clustering using low-rank PCA projection M
@@ -34,18 +33,18 @@ from framework.client.client_lcfed import ClientLCFed
 class ServerLCFed:
     """
     LCFed server:
-      - maintains:
-          * global model (used as initialization / reference)
-          * global embedding Φ (embed state_dict)
-          * K cluster centers Ω_k (full state_dicts)
-          * cluster assignment R_i for each client
-          * low-rank PCA projection matrix M
-      - each round:
-          1) select clients
-          2) send Φ and Ω_{R_i} + global_model init
-          3) receive ω_i and z_i
-          4) update assignments via cosine similarity in low-rank space
-          5) aggregate Φ globally; aggregate Ω_k per-cluster
+        - maintains:
+            * global model (used as initialization / reference)
+            * global embedding Φ (embed state_dict)
+            * K cluster centers Ω_k (full state_dicts)
+            * cluster assignment R_i for each client
+            * low-rank PCA projection matrix M
+        - each round:
+            1) select clients
+            2) send Φ and Ω_{R_i} + global_model init
+            3) receive ω_i and z_i
+            4) update assignments via cosine similarity in low-rank space
+            5) aggregate Φ globally; aggregate Ω_k per-cluster
     """
 
     def __init__(self, global_model, test_dataloader, args, **kwargs):
@@ -208,9 +207,9 @@ class ServerLCFed:
         """
         LCFed training loop (online clustering + dual aggregation).
         Returns:
-          - cluster_centers (Ω_k)
-          - global_phi (Φ)
-          - assignment vector R
+            - cluster_centers (Ω_k)
+            - global_phi (Φ)
+            - assignment vector R
         """
         if not self.clients:
             raise RuntimeError("ServerLCFed: set_clients must be called first.")
