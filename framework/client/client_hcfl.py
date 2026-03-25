@@ -16,7 +16,6 @@ from framework.client.clientbase import Client
 from framework.common.utils import flatten_params
 
 
-from declearn.main.utils._energy_monitor import EnergyMonitor # type: ignore
 
 
 RAPL_ENERGY_UNITS = 1e6
@@ -42,14 +41,16 @@ class ClientHCFL(Client):
         self.mu = float(args.get("mu", 2.0))     # cluster reg
         self.lam = float(args.get("lambda", 1.0)) # global embedding reg
         self.local_steps = int(args.get("local_steps", 0))  # if >0, overrides epochs loops
+        self.monitor_energy = args.get("monitor_energy", False)
 
         # Split train/test
         train_size = int(len(dataset) * self.train_fraction)
         test_size = len(dataset) - train_size
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+        generator = torch.Generator().manual_seed(args.get("seed", 0) + client_id)
+        train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
 
         self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-        self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
+        self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
 
         # Local model
         self.local_model: nn.Module = None
@@ -120,10 +121,13 @@ class ClientHCFL(Client):
 
         acc_before, _, _ = self.evaluate(self.local_model)
 
-        # Energy monitoring (optional)
+        # Energy monitoring (Linux/RAPL only)
         energy_consumed = {}
-        energy_monitor = EnergyMonitor()
-        energy_monitor.start()
+        energy_monitor = None
+        if self.monitor_energy:
+            from declearn.main.utils._energy_monitor import EnergyMonitor  # type: ignore
+            energy_monitor = EnergyMonitor()
+            energy_monitor.start()
 
         if phi_global is None or omega_cluster is None:
 
@@ -141,15 +145,14 @@ class ClientHCFL(Client):
                 energy_consumed = energy_monitor.stop()
 
             loss_val = float(loss.item())
-            z = flatten_params(self.local_model, device=self.device) @ self.M if self.M is not None else None
             acc_after, _, _ = self.evaluate(self.local_model)
-            
+
             if save_metrics:
                 with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a") as f:
                     e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
                     f.write(f"{kwargs.get('round',0)},{loss_val},{acc_before},{acc_after},{e_pkg0},0.0\n")
 
-            return self.get_full_state(), z, loss_val, energy_consumed
+            return self.get_full_state(), loss_val, energy_consumed
 
 
         # Prepare frozen refs Ω_{k*} and Φ on device

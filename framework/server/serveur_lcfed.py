@@ -90,6 +90,10 @@ class ServerLCFed:
         self.cluster_centers = [copy.deepcopy(self.global_model.state_dict()) for _ in range(self.num_clusters)]
         self.global_phi = copy.deepcopy(self.global_model.embed.state_dict())
 
+        # Initialize server metrics CSV
+        with open(os.path.join(self.output_dir, "server_metrics.csv"), "w") as f:
+            f.write("round,mean_acc,std_acc,mean_loss\n")
+
     @torch.no_grad()
     def compute_M_and_broadcast(self):
         """
@@ -170,11 +174,34 @@ class ServerLCFed:
             new_global[f"embed.{k}"] = v.clone()
         self.global_model.load_state_dict(new_global, strict=False)
 
+    @torch.no_grad()
+    def _eval_and_log(self, round_idx: int, selected_ids: set):
+        """
+        Single pass over all clients that:
+          - logs one row per non-selected client in their metrics.csv
+            (selected clients already logged their row inside train())
+          - computes mean/std accuracy across ALL clients and writes to server_metrics.csv
+        """
+        accs, losses = [], []
+        for c in self.clients:
+            k = self.R[c.client_id]
+            eval_model = type(self.global_model)().to(self.device)
+            eval_model.load_state_dict(self.cluster_centers[k])
+            acc, _, loss = c.evaluate(eval_model)
+            accs.append(acc)
+            losses.append(loss)
+            if c.client_id not in selected_ids:
+                with open(os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a") as f:
+                    f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
+
+        with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
+            f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
+
     def select_clients(self, clients_subset: Optional[List[ClientLCFed]] = None) -> List[ClientLCFed]:
         if clients_subset is None:
             clients_subset = self.clients
         m = max(1, int(self.fraction * len(clients_subset)))
-        return list(np.random.choice(clients_subset, m, replace=False))
+        return list(self.rng.sample(clients_subset, m))
 
     def evaluate(self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False):
         model.eval()
@@ -221,12 +248,12 @@ class ServerLCFed:
             selected = self.select_clients()
             selected_ids = {c.client_id for c in selected}
 
-            # On entraîne tout le monde
-            all_client_states: Dict[int, Dict[str, torch.Tensor]] = {}
-            all_client_z: Dict[int, torch.Tensor] = {}
-            all_losses: Dict[int, float] = {}
+            # On entraîne uniquement les clients sélectionnés
+            client_states: Dict[int, Dict[str, torch.Tensor]] = {}
+            client_z: Dict[int, torch.Tensor] = {}
+            losses: List[float] = []
 
-            for c in self.clients:
+            for c in selected:
                 cid = c.client_id
                 k_star = self.R[cid]
                 omega_k = self.cluster_centers[k_star]
@@ -240,20 +267,18 @@ class ServerLCFed:
                     verbose=False
                 )
 
-                all_client_states[cid] = st
-                all_client_z[cid] = z
-                all_losses[cid] = loss
-
-            # On ne garde que les clients sélectionnés pour les MAJ serveur
-            client_states = {cid: all_client_states[cid] for cid in selected_ids}
-            client_z = {cid: all_client_z[cid] for cid in selected_ids}
-            losses = [all_losses[cid] for cid in selected_ids]
+                client_states[cid] = st
+                client_z[cid] = z
+                losses.append(loss)
 
             # Online reassignment (uniquement sur selected)
             self.update_assignments(client_z)
 
             # Aggregate Φ and Ω_k (uniquement sur selected)
             self.aggregate(client_states)
+
+            # Evaluate all clients, log per-client CSV + server_metrics.csv
+            self._eval_and_log(r, selected_ids=selected_ids)
 
             # Optional server-side eval (global_model as reference)
             if verbose and ((r + 1) % self.args.get("log_every", 10) == 0):

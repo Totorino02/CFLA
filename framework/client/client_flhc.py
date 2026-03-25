@@ -4,7 +4,6 @@ from torch.utils.data import random_split, DataLoader
 from framework.client.clientbase import Client
 from torch.nn import Module
 import os
-from declearn.main.utils._energy_monitor import EnergyMonitor # type: ignore
 
 
 RAPL_ENERGY_UNITS = 1e6
@@ -20,20 +19,22 @@ class ClientFLHC(Client):
         self.optimizer = args["optimizer"]
         self.local_epochs = args["local_epochs"]
         self.learning_rate = args["learning_rate"]
+        self.monitor_energy = args.get("monitor_energy", False)
         self.history = []
         self.output_dir = output_dir
         train_size = int(len(dataset) * args["train_fraction"])
         test_size = len(dataset) - train_size
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+        generator = torch.Generator().manual_seed(args.get("seed", 0) + client_id)
+        train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
         self.train_loader = DataLoader(train_dataset, batch_size=args["batch_size"], shuffle=True)
-        self.test_loader = DataLoader(test_dataset, batch_size=args["batch_size"], shuffle=True)
+        self.test_loader = DataLoader(test_dataset, batch_size=args["batch_size"], shuffle=False)
 
         if not os.path.exists(os.path.join(self.output_dir, f"client_{self.client_id}")):
             os.makedirs(os.path.join(self.output_dir, f"client_{self.client_id}"))
         
         # create metrics.csv file
         with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w") as f:
-            f.write("round,loss,accuracy_before, accuracy_after, energy_consumed, energy_ratio\n")
+            f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
     def train(self, global_model=None, verbose=False, save_metrics=True, **kwargs):
         """
@@ -55,10 +56,12 @@ class ClientFLHC(Client):
 
         acc_before, _, _ = self.evaluate()
         
-        # Start energy monitoring
-        energy_monitor = EnergyMonitor()
-        energy_monitor.start()
-
+        # Start energy monitoring (Linux/RAPL only)
+        energy_monitor = None
+        if self.monitor_energy:
+            from declearn.main.utils._energy_monitor import EnergyMonitor  # type: ignore
+            energy_monitor = EnergyMonitor()
+            energy_monitor.start()
 
         for epoch in range(self.local_epochs):
             for batch_idx, (data, target) in enumerate(self.train_loader):
@@ -70,8 +73,7 @@ class ClientFLHC(Client):
                 self.optimizer.step()
         
         # Stop energy monitoring and get results
-        energy_consumed = energy_monitor.stop()
-
+        energy_consumed = energy_monitor.stop() if energy_monitor is not None else {}
 
         # update vector of local model parameters
         update_vector = []
@@ -83,7 +85,7 @@ class ClientFLHC(Client):
         
         # updates_norm
         client_energy = 0 #energy_monitor.compute_energy_ratio(energy_consumed, self.local_model.parameters())
-        udpates_norm = torch.norm(torch.cat(update_vector))
+        updates_norm = torch.norm(torch.cat(update_vector))
         for k, e in energy_consumed.items():
             if e < 0:
                 e = 0
@@ -92,7 +94,7 @@ class ClientFLHC(Client):
             else:
                 e = e / RAPL_ENERGY_UNITS
             client_energy += e 
-        energy_ratio = client_energy / (udpates_norm.item() + 1e-9)
+        energy_ratio = client_energy / (updates_norm.item() + 1e-9)
 
 
         # evaluate the local model
@@ -101,7 +103,8 @@ class ClientFLHC(Client):
         if save_metrics:
             # Save metrics to CSV
             with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a") as f:
-                f.write(f"{kwargs.get('round', 0)},{loss.item()},{acc_before},{accuracy},{energy_consumed['package_0']},{energy_ratio}\n")
+                e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
+                f.write(f"{kwargs.get('round', 0)},{loss.item()},{acc_before},{accuracy},{e_pkg0},{energy_ratio}\n")
         
         if verbose:
                 print(f"Client: {self.client_id} | Round: {kwargs.get('round', 0)} | Loss: {loss.item()} | Acc: {accuracy} | Engy: {energy_consumed} | E. Ratio: {energy_ratio}")

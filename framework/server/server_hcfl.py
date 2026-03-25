@@ -58,6 +58,10 @@ class ServerHCFL(Server):
         # Initialize R with -1 (unassigned) for all clients
         self.R = [-1] * len(clients)
 
+        # Initialize server metrics CSV
+        with open(os.path.join(self.output_dir, "server_metrics.csv"), "w") as f:
+            f.write("round,mean_acc,std_acc,mean_loss\n")
+
     @torch.no_grad()
     def aggregate(self, client_states: Dict[int, Dict[str, torch.Tensor]]):
         """
@@ -88,6 +92,29 @@ class ServerHCFL(Server):
         for k, v in self.global_phi.items():
             new_global[f"embed.{k}"] = v.clone()
         self.global_model.load_state_dict(new_global, strict=False)
+
+    @torch.no_grad()
+    def _eval_and_log(self, round_idx: int, selected_ids: set):
+        """
+        Single pass over all clients that:
+          - logs one row per non-selected client in their metrics.csv
+            (selected clients already logged their row inside train())
+          - computes mean/std accuracy across ALL clients and writes to server_metrics.csv
+        """
+        accs, losses = [], []
+        for c in self.clients:
+            k = self.R[c.client_id]
+            eval_model = type(self.global_model)().to(self.device)
+            eval_model.load_state_dict(self.cluster_centers[k])
+            acc, _, loss = c.evaluate(eval_model)
+            accs.append(acc)
+            losses.append(loss)
+            if c.client_id not in selected_ids:
+                with open(os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a") as f:
+                    f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
+
+        with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
+            f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
     def select_clients(self, clients_subset: Optional[List[ClientHCFL]] = None) -> List[ClientHCFL]:
         if clients_subset is None:
@@ -124,18 +151,32 @@ class ServerHCFL(Server):
 
     def pre_learning(self):
         """
-            This method performs the initial rounds of training before clustering."""
-        updates = []
+        Runs initial_rounds of FedAvg to warm up the global model, then collects
+        embedding update vectors from all clients for hierarchical clustering.
+        """
+        # Warm-up rounds: standard FedAvg to get a meaningful global representation
         for epoch in range(self.initial_rounds):
-            for client in self.clients:
-                client_local_model, _, _, _ = client.train(self.global_model, round=epoch, save_metrics=False)
-                update_vector = []
-                for new_param, old_param in zip(client.local_model.embed.parameters(), self.global_model.embed.parameters()):
-                    update_vector.append((new_param.data - old_param.data).flatten())
-                update_vector = torch.cat(update_vector).cpu().numpy()
-                updates.append(update_vector)
-            updates = np.array(updates)
-        return updates
+            selected = self.select_clients()
+            client_states = []
+            for client in selected:
+                state, _, _ = client.train(self.global_model, round=epoch, save_metrics=False)
+                client_states.append(state)
+            # Aggregate selected clients into global model
+            averaged = average_state_dict(client_states)
+            self.global_model.load_state_dict(averaged)
+
+        # Collect embedding update vectors from ALL clients after warm-up
+        updates = []
+        for client in self.clients:
+            _, _, _ = client.train(self.global_model, round=self.initial_rounds, save_metrics=False)
+            update_vector = []
+            for new_param, old_param in zip(
+                client.local_model.embed.parameters(),
+                self.global_model.embed.parameters(),
+            ):
+                update_vector.append((new_param.data - old_param.data).flatten())
+            updates.append(torch.cat(update_vector).cpu().numpy())
+        return np.array(updates)
     
     def hierarchical_clustering(self, updates):
         """
@@ -187,13 +228,11 @@ class ServerHCFL(Server):
 
         for r in range(self.cluster_rounds):
             selected = self.select_clients()
-            selected_ids = {c.client_id for c in selected}
 
-            # On entraîne tout le monde
-            all_client_states: Dict[int, Dict[str, torch.Tensor]] = {}
-            all_losses: Dict[int, float] = {}
+            client_states: Dict[int, Dict[str, torch.Tensor]] = {}
+            losses: List[float] = []
 
-            for c in self.clients:
+            for c in selected:
                 cid = c.client_id
                 k_star = self.R[cid]
                 omega_k = self.cluster_centers[k_star]
@@ -204,18 +243,17 @@ class ServerHCFL(Server):
                     phi_global=phi,
                     omega_cluster=omega_k,
                     round=r,
-                    verbose=False
+                    verbose=False,
                 )
 
-                all_client_states[cid] = st
-                all_losses[cid] = loss
-
-            # On ne garde que les clients sélectionnés pour les MAJ serveur
-            client_states = {cid: all_client_states[cid] for cid in selected_ids}
-            losses = [all_losses[cid] for cid in selected_ids]
+                client_states[cid] = st
+                losses.append(loss)
 
             # Aggregate Φ and Ω_k (uniquement sur selected)
             self.aggregate(client_states)
+
+            # Evaluate all clients, log per-client CSV + server_metrics.csv
+            self._eval_and_log(r, selected_ids={c.client_id for c in selected})
 
             # Optional server-side eval (global_model as reference)
             if verbose and ((r + 1) % self.args.get("log_every", 10) == 0):
@@ -228,7 +266,7 @@ class ServerHCFL(Server):
 
                 print(
                     f"[Round {r+1:04d}] "
-                    f"selected={len(selected_ids)}/{len(self.clients)} "
+                    f"selected={len(selected)}/{len(self.clients)} "
                     f"mean loss(sel)={mean_loss:.4f} "
                     f"global acc@1={g_acc1:.4f} "
                     f"cluster_sizes={counts}"

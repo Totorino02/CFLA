@@ -27,7 +27,6 @@ from sklearn.cluster import KMeans
 from framework.common.utils import flatten_params
 
 # If you keep declearn energy monitoring:
-from declearn.main.utils._energy_monitor import EnergyMonitor # type: ignore
 
 RAPL_ENERGY_UNITS = 1e6
 NVML_NVIDIA_UNITS = 1e3
@@ -89,14 +88,16 @@ class ClientLCFed:
         self.mu = float(args.get("mu", 2.0))     # cluster reg
         self.lam = float(args.get("lambda", 1.0)) # global embedding reg
         self.local_steps = int(args.get("local_steps", 0))  # if >0, overrides epochs loops
+        self.monitor_energy = args.get("monitor_energy", False)
 
         # Split train/test
         train_size = int(len(dataset) * self.train_fraction)
         test_size = len(dataset) - train_size
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+        generator = torch.Generator().manual_seed(args.get("seed", 0) + client_id)
+        train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
 
         self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-        self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
+        self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
 
         # Local model
         self.local_model: nn.Module = None
@@ -164,10 +165,13 @@ class ClientLCFed:
 
         acc_before, _, _ = self.evaluate(self.local_model)
 
-        # Energy monitoring (optional)
+        # Energy monitoring (Linux/RAPL only)
         energy_consumed = {}
-        energy_monitor = EnergyMonitor()
-        energy_monitor.start()
+        energy_monitor = None
+        if self.monitor_energy:
+            from declearn.main.utils._energy_monitor import EnergyMonitor  # type: ignore
+            energy_monitor = EnergyMonitor()
+            energy_monitor.start()
 
         # Prepare frozen refs Ω_{k*} and Φ on device
         omega_ref = type(global_model)().to(self.device)

@@ -53,17 +53,15 @@ class ServerFLHC(Server):
         total_samples = 0
         weighted_sum = None
         mean_loss = 0.0
-        for client in clients_subset:
+        for client in selected_clients:
             data_size = len(client.train_loader.dataset)
             updated_params, update_vector, loss = client.train(model, round=kwargs.get("round", 0))
-
-            if client in selected_clients:
-                mean_loss += loss
-                total_samples += data_size
-                if weighted_sum is None:
-                    weighted_sum = updated_params * data_size
-                else:
-                    weighted_sum += updated_params * data_size
+            mean_loss += loss
+            total_samples += data_size
+            if weighted_sum is None:
+                weighted_sum = updated_params * data_size
+            else:
+                weighted_sum += updated_params * data_size
 
         # average the update vectors and loss
         mean_loss /= m
@@ -137,6 +135,9 @@ class ServerFLHC(Server):
         accuracy_history = defaultdict(list)
         global_test_accuracy_history = defaultdict(list)
         global_test_loss_history = defaultdict(list)
+        # Collect per-round acc/loss across all clients (all clusters) for server_metrics
+        round_accs = defaultdict(list)
+        round_losses = defaultdict(list)
         print("Specialized models training...")
         personalization_start_time = time.time()
         for label, cluster_clients in self.clusters.items():
@@ -146,16 +147,29 @@ class ServerFLHC(Server):
             for _round in tqdm(range(self.cluster_rounds), unit="round", colour="green"):
                 cluster_model, mean_loss = self.federated_learning(cluster_model, cluster_clients, round=_round)
                 training_loss_history[int(label)].append(mean_loss)
-                # pick a random client int the cluster and perform the eval
-                client_id = self.rng.integers(0, len(cluster_clients))
-                acc_top1, acc_topk, test_loss = self.evaluate(cluster_model, cluster_clients[client_id].test_loader, k=1, return_loss=True)
                 g_acc_top1, g_acc_topk, g_test_loss = self.evaluate(cluster_model, self.test_dataloader, k=1, return_loss=True)
-                test_loss_history[int(label)].append(test_loss)
-                accuracy_history[int(label)].append(acc_top1)
                 global_test_accuracy_history[int(label)].append(g_acc_top1)
                 global_test_loss_history[int(label)].append(g_test_loss)
+                # Evaluate all clients in this cluster so every CSV has one row per round
+                for c in cluster_clients:
+                    acc_top1, _, test_loss = self.evaluate(cluster_model, c.test_loader, k=1, return_loss=True)
+                    with open(os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a") as f:
+                        f.write(f"{_round},{test_loss},{acc_top1},{acc_top1},0,0\n")
+                    round_accs[_round].append(acc_top1)
+                    round_losses[_round].append(test_loss)
+                test_loss_history[int(label)].append(test_loss)
+                accuracy_history[int(label)].append(acc_top1)
             specialized_models[label] = cluster_model
         self.specialized_models = specialized_models
+
+        # Write global server_metrics: mean/std across all clients at each round
+        with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
+            for r in range(self.cluster_rounds):
+                f.write(
+                    f"{r},{np.mean(round_accs[r]):.6f},"
+                    f"{np.std(round_accs[r]):.6f},"
+                    f"{np.mean(round_losses[r]):.6f}\n"
+                )
         training_end_time = time.time()
         personalization_end_time = time.time()
         print("Specialized models end training.\n")
@@ -199,7 +213,7 @@ class ServerFLHC(Server):
         avg_loss = total_loss / total
 
         if return_loss:
-            return acc_top1, acc_topk, last_lost
+            return acc_top1, acc_topk, avg_loss
         else:
             return acc_top1, acc_topk
 
@@ -210,6 +224,10 @@ class ServerFLHC(Server):
         self.clients = clients
         for client in clients:
             client.output_dir = self.output_dir
+
+        # Initialize server metrics CSV
+        with open(os.path.join(self.output_dir, "server_metrics.csv"), "w") as f:
+            f.write("round,mean_acc,std_acc,mean_loss\n")
 
     def get_params(self):
         return self.global_model.state_dict()

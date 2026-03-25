@@ -29,6 +29,7 @@ class ServerFedAvg(Server):
         self.clients : list[Client]= []
         self.selected_clients : list[Client] = []
         self.train_loss_check = list()
+        self.rng = np.random.default_rng(args.get("seed", 0))
 
 
     def train(self, verbose=False):
@@ -53,7 +54,7 @@ class ServerFedAvg(Server):
         """
         # selects clients
         m = max(1, int(self.fraction * len(clients_subset)))
-        selected_clients = np.random.choice(clients_subset, m, replace=False)
+        selected_clients = self.rng.choice(clients_subset, m, replace=False)
 
         total_samples = 0
         weighted_updates = None
