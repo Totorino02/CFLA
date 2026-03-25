@@ -10,3 +10,4 @@ tmp
 *RESULTS*
 *images*
 *.log
+*.egg-info
