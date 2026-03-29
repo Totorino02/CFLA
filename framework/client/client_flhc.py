@@ -79,7 +79,7 @@ class ClientFLHC(Client):
         update_vector = []
         updated_params = []
         for new_param, old_param in zip(self.local_model.parameters(), global_model.parameters()):
-            update_vector.append((new_param.data - old_param.data).flatten())
+            update_vector.append((new_param.data - old_param.data.to(self.device)).flatten())
             updated_params.append(new_param.data.flatten())
 
         
@@ -111,7 +111,7 @@ class ClientFLHC(Client):
 
         #for vect in update_vector:
         #    print(vect.size())
-        update_vector = torch.cat(update_vector).numpy()
+        update_vector = torch.cat(update_vector).cpu().numpy()
         updated_params = torch.cat(updated_params)
         return updated_params, update_vector, loss.item()
 

@@ -22,6 +22,7 @@ class ServerFLHC(Server):
         self.cluster_rounds = args["cluster_rounds"]
         self.distance_threshold = args["distance_threshold"]
         self.clustering_metric = args["clustering_metric"]
+        self.n_clusters = args.get("n_clusters", None)
         self.clusters = None
         self.clients : list[ClientFLHC]= []
         self.selected_clients : list[ClientFLHC] = []
@@ -73,23 +74,25 @@ class ServerFLHC(Server):
         for param_name, param in model.named_parameters():
             param_size = param.numel()
             delta = aggregated_update[offset: offset + param_size].view(param.size())
-            new_state_dict[param_name] = delta.clone()
+            new_state_dict[param_name] = delta.cpu().clone()
             offset += param_size
         model.load_state_dict(new_state_dict)
         return model, mean_loss
 
     def hierarchical_clustering(self, updates):
-        """
-        This method performs hierarchical clustering on the update vectors of the clients and returns the clusters.
-        :param updates: Update vectors
-        :return: Clusters
-        """
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=self.distance_threshold,
-            metric=self.clustering_metric,
-            linkage='average'
-        )
+        if self.n_clusters is not None:
+            clustering = AgglomerativeClustering(
+                n_clusters=self.n_clusters,
+                metric='euclidean',
+                linkage='ward',
+            )
+        else:
+            clustering = AgglomerativeClustering(
+                n_clusters=None,
+                distance_threshold=self.distance_threshold,
+                metric=self.clustering_metric,
+                linkage='average',
+            )
 
         labels = clustering.fit_predict(updates)
         clusters = {}
