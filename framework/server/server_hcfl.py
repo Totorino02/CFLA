@@ -26,9 +26,13 @@ class ServerHCFL(Server):
         self.device = args["device"]
         self.initial_rounds = args["initial_rounds"]
         self.cluster_rounds = args["cluster_rounds"]
-        self.distance_threshold = args["distance_threshold"]
-        self.clustering_metric = args["clustering_metric"]
+        self.distance_threshold = args.get("distance_threshold", 0.5)
+        self.clustering_metric = args.get("clustering_metric", "cosine")
         self.n_clusters = args.get("n_clusters", None)   # if set, overrides distance_threshold
+        # λ(t) = λ₀ / (1 + α·t)^p  — contrôle le mélange Ω_k ← (1-λ)·Avg + λ·Φ
+        self.lambda_0     = float(args.get("lambda_0",     1.0))
+        self.lambda_alpha = float(args.get("lambda_alpha", 0.1))
+        self.lambda_p     = float(args.get("lambda_p",     1.0))
         self.clusters = None
         self.clients : list[ClientHCFL]= []
         self.selected_clients : list[ClientHCFL] = []
@@ -64,11 +68,14 @@ class ServerHCFL(Server):
             f.write("round,mean_acc,std_acc,mean_loss\n")
 
     @torch.no_grad()
-    def aggregate(self, client_states: Dict[int, Dict[str, torch.Tensor]]):
+    def aggregate(self, client_states: Dict[int, Dict[str, torch.Tensor]], round: int = 0):
         """
-        - global Φ: average embedding states from all participating clients
-        - Ω_k: average full model states within each cluster among participating clients
+        - Φ ← Σ n_i·φ_i / Σ n_i  (moyenne pondérée des embeddings)
+        - Ω_k ← (1-λ(t))·Avg({ω_i : i ∈ S_t ∩ C_k}) + λ(t)·Φ(t)
         """
+        # λ(t) = λ₀ / (1 + α·t)^p
+        lam = self.lambda_0 / (1.0 + self.lambda_alpha * round) ** self.lambda_p
+
         # Φ ← Σ n_i·φ_i / Σ n_i  (weighted by local dataset size)
         client_size = {c.client_id: len(c.train_loader.dataset) for c in self.clients}
         embed_dicts, weights = [], []
@@ -83,12 +90,21 @@ class ServerHCFL(Server):
                 for k in embed_dicts[0]
             }
 
-        # Ω_k
+        # Ω_k ← (1-λ)·Avg(ω_i pour i ∈ S_t ∩ C_k) + λ·Φ
         for k in range(self.num_clusters):
             members = [cid for cid in client_states.keys() if self.R[cid] == k]
             if not members:
                 continue
-            self.cluster_centers[k] = average_state_dict([client_states[cid] for cid in members])
+            avg_k = average_state_dict([client_states[cid] for cid in members])
+            # Mélange : parties embedding tirées vers Φ, reste inchangé
+            blended = {}
+            for param_key, avg_val in avg_k.items():
+                if param_key.startswith("embed."):
+                    phi_key = param_key[len("embed."):]
+                    blended[param_key] = (1.0 - lam) * avg_val + lam * self.global_phi[phi_key].to(avg_val.device)
+                else:
+                    blended[param_key] = avg_val
+            self.cluster_centers[k] = blended
 
         # (Optional) keep global_model synced to Φ + average head or something
         # LCFed is primarily cluster-personalized; global_model used as init.
@@ -100,14 +116,27 @@ class ServerHCFL(Server):
         self.global_model.load_state_dict(new_global, strict=False)
 
     @torch.no_grad()
+    def _omega_phi_dist(self, k: int) -> float:
+        """‖Ω_k - Φ‖₂ sur les paramètres embedding uniquement."""
+        dist = 0.0
+        for param_key, omega_val in self.cluster_centers[k].items():
+            if param_key.startswith("embed."):
+                phi_key = param_key[len("embed."):]
+                if phi_key in self.global_phi:
+                    dist += (omega_val.cpu() - self.global_phi[phi_key].cpu()).pow(2).sum().item()
+        return dist ** 0.5
+
+    @torch.no_grad()
     def _eval_and_log(self, round_idx: int, selected_ids: set):
         """
-        Single pass over all clients that:
-            - logs one row per non-selected client in their metrics.csv
-                (selected clients already logged their row inside train())
-            - computes mean/std accuracy across ALL clients and writes to server_metrics.csv
+        - logs one row per non-selected client in their metrics.csv
+        - computes mean/std accuracy across ALL clients → server_metrics.csv
+        - computes per-cluster accuracy + ‖Ω_k - Φ‖ → cluster_metrics.csv
         """
+        # Collect per-client and per-cluster accuracy
+        cluster_accs: Dict[int, List[float]] = {k: [] for k in range(self.num_clusters)}
         accs, losses = [], []
+
         for c in self.clients:
             k = self.R[c.client_id]
             eval_model = type(self.global_model)().to(self.device)
@@ -115,12 +144,23 @@ class ServerHCFL(Server):
             acc, _, loss = c.evaluate(eval_model)
             accs.append(acc)
             losses.append(loss)
+            cluster_accs[k].append(acc)
             if c.client_id not in selected_ids:
                 with open(os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a") as f:
                     f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
 
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
             f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
+
+        # λ courant pour ce round
+        lam = self.lambda_0 / (1.0 + self.lambda_alpha * round_idx) ** self.lambda_p
+
+        with open(os.path.join(self.output_dir, "cluster_metrics.csv"), "a") as f:
+            for k in range(self.num_clusters):
+                n_k = len(self.clusters[k])
+                mean_acc_k = float(np.mean(cluster_accs[k])) if cluster_accs[k] else 0.0
+                dist_k = self._omega_phi_dist(k)
+                f.write(f"{round_idx},{k},{n_k},{mean_acc_k:.6f},{dist_k:.6f},{lam:.6f}\n")
 
     def select_clients(self, clients_subset: Optional[List[ClientHCFL]] = None) -> List[ClientHCFL]:
         """Global selection — used during pre-learning (no clusters yet)."""
@@ -246,6 +286,10 @@ class ServerHCFL(Server):
             for client in clients:
                 self.R[client.client_id] = cluster_id
 
+        # cluster_metrics.csv — per-cluster accuracy + divergence Ω_k ↔ Φ
+        with open(os.path.join(self.output_dir, "cluster_metrics.csv"), "w") as f:
+            f.write("round,cluster,n_clients,mean_acc,omega_phi_dist,lambda\n")
+
         for r in range(self.cluster_rounds):
             selected = self.select_clients_per_cluster()
 
@@ -260,18 +304,17 @@ class ServerHCFL(Server):
 
                 st, loss, _energy = c.train(
                     global_model=self.global_model,
-                    phi_global=phi,
                     omega_cluster=omega_k,
-                    round=r,
                     verbose=False,
                     save_metrics=True,
+                    round=r,
                 )
 
                 client_states[cid] = st
                 losses.append(loss)
 
             # Aggregate Φ and Ω_k (uniquement sur selected)
-            self.aggregate(client_states)
+            self.aggregate(client_states, round=r)
 
             # Evaluate all clients, log per-client CSV + server_metrics.csv
             self._eval_and_log(r, selected_ids={c.client_id for c in selected})

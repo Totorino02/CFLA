@@ -37,10 +37,8 @@ class ClientHCFL(Client):
         self.batch_size = args["batch_size"]
         self.train_fraction = args.get("train_fraction", 0.8)
 
-        # λ(t) = λ₀ / (1 + α·t)^p,  μ(t) = 1 − λ(t)
-        self.lambda_0     = float(args.get("lambda_0",     1.0))
-        self.lambda_alpha = float(args.get("lambda_alpha", 1.0))
-        self.lambda_p     = float(args.get("lambda_p",     1.0))
+        # μ : coefficient de régularisation vers le centre de cluster (statique, indépendant de λ)
+        self.mu          = float(args.get("mu", 1.0))
         self.local_steps = int(args.get("local_steps", 0))  # if >0, overrides epochs loops
         self.monitor_energy = args.get("monitor_energy", False)
 
@@ -97,9 +95,7 @@ class ClientHCFL(Client):
     def train(
         self,
         global_model: nn.Module,
-        phi_global: Dict[str, torch.Tensor] = None,
         omega_cluster: Dict[str, torch.Tensor] = None,
-        round: int = 0,
         verbose: bool = False,
         save_metrics: bool = True,
         **kwargs
@@ -131,7 +127,7 @@ class ClientHCFL(Client):
             energy_monitor = EnergyMonitor()
             energy_monitor.start()
 
-        if phi_global is None or omega_cluster is None:
+        if omega_cluster is None:
 
             # Standard local training (no clustering regularization)
             for epoch in range(self.local_epochs):
@@ -157,18 +153,10 @@ class ClientHCFL(Client):
             return self.get_full_state(), loss_val, energy_consumed
 
 
-        # λ(t) = λ₀ / (1 + α·t)^p,  μ(t) = 1 − λ(t),  μ + λ = 1
-        lam = self.lambda_0 / (1.0 + self.lambda_alpha * round) ** self.lambda_p
-        mu  = 1.0 - lam
-
-        # Prepare frozen refs Ω_{k*} and Φ on device
+        # Prépare Ω_{k*} figé sur le device
         omega_ref = type(global_model)().to(self.device)
         omega_ref.load_state_dict(omega_cluster, strict=True)
         omega_ref.eval()
-
-        phi_ref = copy.deepcopy(self.local_model.embed).to(self.device)
-        phi_ref.load_state_dict(phi_global, strict=True)
-        phi_ref.eval()
 
         loss_val = 0.0
 
@@ -189,17 +177,12 @@ class ClientHCFL(Client):
                 out = self.local_model(data)
                 loss_sup = self.criterion(out, target)
 
-                # μ/2 ||ω - Ω||^2 over all params
+                # μ/2 ||ω - Ω_k||^2 : spécialisation vers le centre de cluster
                 l2_cluster = torch.zeros((), device=self.device)
                 for p, q in zip(self.local_model.parameters(), omega_ref.parameters()):
                     l2_cluster = l2_cluster + (p - q).pow(2).sum()
 
-                # λ/2 ||ϕ - Φ||^2 only over embedding params
-                l2_global = torch.zeros((), device=self.device)
-                for p, q in zip(self.local_model.embed.parameters(), phi_ref.parameters()):
-                    l2_global = l2_global + (p - q).pow(2).sum()
-
-                loss = loss_sup + 0.5 * mu * l2_cluster + 0.5 * lam * l2_global
+                loss = loss_sup + 0.5 * self.mu * l2_cluster
                 loss.backward()
                 optimizer.step()
                 loss_val = float(loss.item())
@@ -215,11 +198,7 @@ class ClientHCFL(Client):
                     for p, q in zip(self.local_model.parameters(), omega_ref.parameters()):
                         l2_cluster = l2_cluster + (p - q).pow(2).sum()
 
-                    l2_global = torch.zeros((), device=self.device)
-                    for p, q in zip(self.local_model.embed.parameters(), phi_ref.parameters()):
-                        l2_global = l2_global + (p - q).pow(2).sum()
-
-                    loss = loss_sup + 0.5 * mu * l2_cluster + 0.5 * lam * l2_global
+                    loss = loss_sup + 0.5 * self.mu * l2_cluster
                     loss.backward()
                     optimizer.step()
                     loss_val = float(loss.item())
