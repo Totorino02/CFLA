@@ -37,9 +37,10 @@ class ClientHCFL(Client):
         self.batch_size = args["batch_size"]
         self.train_fraction = args.get("train_fraction", 0.8)
 
-        # LCFed-specific
-        self.mu = float(args.get("mu", 2.0))     # cluster reg
-        self.lam = float(args.get("lambda", 1.0)) # global embedding reg
+        # λ(t) = λ₀ / (1 + α·t)^p,  μ(t) = 1 − λ(t)
+        self.lambda_0     = float(args.get("lambda_0",     1.0))
+        self.lambda_alpha = float(args.get("lambda_alpha", 1.0))
+        self.lambda_p     = float(args.get("lambda_p",     1.0))
         self.local_steps = int(args.get("local_steps", 0))  # if >0, overrides epochs loops
         self.monitor_energy = args.get("monitor_energy", False)
 
@@ -98,6 +99,7 @@ class ClientHCFL(Client):
         global_model: nn.Module,
         phi_global: Dict[str, torch.Tensor] = None,
         omega_cluster: Dict[str, torch.Tensor] = None,
+        round: int = 0,
         verbose: bool = False,
         save_metrics: bool = True,
         **kwargs
@@ -155,6 +157,10 @@ class ClientHCFL(Client):
             return self.get_full_state(), loss_val, energy_consumed
 
 
+        # λ(t) = λ₀ / (1 + α·t)^p,  μ(t) = 1 − λ(t),  μ + λ = 1
+        lam = self.lambda_0 / (1.0 + self.lambda_alpha * round) ** self.lambda_p
+        mu  = 1.0 - lam
+
         # Prepare frozen refs Ω_{k*} and Φ on device
         omega_ref = type(global_model)().to(self.device)
         omega_ref.load_state_dict(omega_cluster, strict=True)
@@ -193,7 +199,7 @@ class ClientHCFL(Client):
                 for p, q in zip(self.local_model.embed.parameters(), phi_ref.parameters()):
                     l2_global = l2_global + (p - q).pow(2).sum()
 
-                loss = loss_sup + 0.5 * self.mu * l2_cluster + 0.5 * self.lam * l2_global
+                loss = loss_sup + 0.5 * mu * l2_cluster + 0.5 * lam * l2_global
                 loss.backward()
                 optimizer.step()
                 loss_val = float(loss.item())
@@ -213,7 +219,7 @@ class ClientHCFL(Client):
                     for p, q in zip(self.local_model.embed.parameters(), phi_ref.parameters()):
                         l2_global = l2_global + (p - q).pow(2).sum()
 
-                    loss = loss_sup + 0.5 * self.mu * l2_cluster + 0.5 * self.lam * l2_global
+                    loss = loss_sup + 0.5 * mu * l2_cluster + 0.5 * lam * l2_global
                     loss.backward()
                     optimizer.step()
                     loss_val = float(loss.item())

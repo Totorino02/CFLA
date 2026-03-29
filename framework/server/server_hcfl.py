@@ -20,7 +20,7 @@ class ServerHCFL(Server):
 
     def __init__(self, global_model, test_dataloader, args, **kwargs):
         super().__init__()
-        self.global_model = global_model
+        self.global_model = global_model.to(args["device"])
         self.test_dataloader = test_dataloader
         self.fraction = args["fraction"]
         self.device = args["device"]
@@ -28,6 +28,7 @@ class ServerHCFL(Server):
         self.cluster_rounds = args["cluster_rounds"]
         self.distance_threshold = args["distance_threshold"]
         self.clustering_metric = args["clustering_metric"]
+        self.n_clusters = args.get("n_clusters", None)   # if set, overrides distance_threshold
         self.clusters = None
         self.clients : list[ClientHCFL]= []
         self.selected_clients : list[ClientHCFL] = []
@@ -68,14 +69,19 @@ class ServerHCFL(Server):
         - global Φ: average embedding states from all participating clients
         - Ω_k: average full model states within each cluster among participating clients
         """
-        # Φ
-        embed_dicts = []
-        for _cid, st in client_states.items():
-            # extract embed.* keys and strip prefix
+        # Φ ← Σ n_i·φ_i / Σ n_i  (weighted by local dataset size)
+        client_size = {c.client_id: len(c.train_loader.dataset) for c in self.clients}
+        embed_dicts, weights = [], []
+        for cid, st in client_states.items():
             e = {k.replace("embed.", ""): v for k, v in st.items() if k.startswith("embed.")}
             embed_dicts.append(e)
+            weights.append(client_size[cid])
         if embed_dicts:
-            self.global_phi = average_state_dict(embed_dicts)
+            total = sum(weights)
+            self.global_phi = {
+                k: sum(w * d[k] for d, w in zip(embed_dicts, weights)) / total
+                for k in embed_dicts[0]
+            }
 
         # Ω_k
         for k in range(self.num_clusters):
@@ -97,9 +103,9 @@ class ServerHCFL(Server):
     def _eval_and_log(self, round_idx: int, selected_ids: set):
         """
         Single pass over all clients that:
-          - logs one row per non-selected client in their metrics.csv
-            (selected clients already logged their row inside train())
-          - computes mean/std accuracy across ALL clients and writes to server_metrics.csv
+            - logs one row per non-selected client in their metrics.csv
+                (selected clients already logged their row inside train())
+            - computes mean/std accuracy across ALL clients and writes to server_metrics.csv
         """
         accs, losses = [], []
         for c in self.clients:
@@ -117,10 +123,22 @@ class ServerHCFL(Server):
             f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
     def select_clients(self, clients_subset: Optional[List[ClientHCFL]] = None) -> List[ClientHCFL]:
+        """Global selection — used during pre-learning (no clusters yet)."""
         if clients_subset is None:
             clients_subset = self.clients
         m = max(1, int(self.fraction * len(clients_subset)))
         return list(self.rng.choice(clients_subset, m, replace=False))
+
+    def select_clients_per_cluster(self) -> List[ClientHCFL]:
+        """
+        Select `fraction` of clients independently within each cluster.
+        Guarantees every cluster is represented at every round.
+        """
+        selected = []
+        for cluster_clients in self.clusters.values():
+            m = max(1, int(self.fraction * len(cluster_clients)))
+            selected.extend(self.rng.choice(cluster_clients, m, replace=False))
+        return selected
 
     def evaluate(self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False):
         model.eval()
@@ -179,17 +197,19 @@ class ServerHCFL(Server):
         return np.array(updates)
     
     def hierarchical_clustering(self, updates):
-        """
-        This method performs hierarchical clustering on the update vectors of the clients and returns the clusters.
-        :param updates: Update vectors
-        :return: Clusters
-        """
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=self.distance_threshold,
-            metric=self.clustering_metric,
-            linkage='average'
-        )
+        if self.n_clusters is not None:
+            clustering = AgglomerativeClustering(
+                n_clusters=self.n_clusters,
+                metric='euclidean',
+                linkage='ward',
+            )
+        else:
+            clustering = AgglomerativeClustering(
+                n_clusters=None,
+                distance_threshold=self.distance_threshold,
+                metric=self.clustering_metric,
+                linkage='average',
+            )
 
         labels = clustering.fit_predict(updates)
         clusters = {}
@@ -227,7 +247,7 @@ class ServerHCFL(Server):
                 self.R[client.client_id] = cluster_id
 
         for r in range(self.cluster_rounds):
-            selected = self.select_clients()
+            selected = self.select_clients_per_cluster()
 
             client_states: Dict[int, Dict[str, torch.Tensor]] = {}
             losses: List[float] = []
@@ -244,6 +264,7 @@ class ServerHCFL(Server):
                     omega_cluster=omega_k,
                     round=r,
                     verbose=False,
+                    save_metrics=True,
                 )
 
                 client_states[cid] = st
@@ -274,7 +295,7 @@ class ServerHCFL(Server):
 
         if verbose:
             dur = time.time() - start
-            print(f"LCFed training done in {dur:.1f}s")
+            print(f"$HCFL training done in {dur:.1f}s")
 
         return self.cluster_centers, self.global_phi, self.R
     
