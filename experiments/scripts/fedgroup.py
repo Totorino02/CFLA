@@ -1,4 +1,5 @@
 import torch
+DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 import numpy as np
 import datetime
 import os
@@ -14,15 +15,15 @@ def _get_model(dataset: str, num_classes: int):
     return CNNCifar(num_classes=num_classes)
 
 
-def run_fedgroup_experiment(nb_runs=1, base_seed=42, dataset="mnist"):
-    from experiments.scripts.main import build_client_datasets
+def run_fedgroup_experiment(nb_runs=1, base_seed=42, dataset="mnist", noise_ratio=0.0, nb_rounds=50):
+    from experiments.scripts.run_all_mnist import build_client_datasets
 
     for run in range(nb_runs):
         seed = base_seed + run
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        client_datasets, test_loader, num_classes = build_client_datasets(base_seed, run, dataset)
+        client_datasets, test_loader, num_classes = build_client_datasets(base_seed, run, dataset, noise_ratio=noise_ratio)
 
         stamp = datetime.datetime.now().strftime("%y-%m-%d_%H-%M")
         output_dir = os.path.join("./RESULTS", f"result_fedgroup_{dataset}_{stamp}")
@@ -30,7 +31,7 @@ def run_fedgroup_experiment(nb_runs=1, base_seed=42, dataset="mnist"):
 
         client_args = {
             "local_epochs": 3,
-            "device": "cpu",
+            "device": DEVICE,
             "learning_rate": 0.01,
             "batch_size": 32,
             "train_fraction": 0.2,
@@ -47,9 +48,9 @@ def run_fedgroup_experiment(nb_runs=1, base_seed=42, dataset="mnist"):
 
         server_args = {
             "fraction": 0.2,
-            "device": "cpu",
+            "device": DEVICE,
             "initial_rounds": 3,
-            "cluster_rounds": 50,
+            "cluster_rounds": nb_rounds,
             "distance_threshold": 0.5,
             "output_dir": output_dir,
             "seed": seed,
