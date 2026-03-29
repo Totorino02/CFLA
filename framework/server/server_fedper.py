@@ -31,7 +31,7 @@ class ServerFedPer(Server):
 
     def __init__(self, global_model, test_dataloader, args, **kwargs):
         super().__init__()
-        self.global_model = global_model
+        self.global_model = global_model.to(args["device"])
         self.test_dataloader = test_dataloader
         self.args = args
 
