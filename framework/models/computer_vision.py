@@ -104,6 +104,50 @@ class SplitCNNCifar(nn.Module):
         return self.head(self.embed(x))
 
 
+class LeNet5FEMNIST(nn.Module):
+    """LeNet5 for FEMNIST (28×28 grayscale, 62 classes by default)."""
+    def __init__(self, num_classes=62):
+        super().__init__()
+        self.feature = nn.Sequential(
+            nn.Conv2d(1, 6, kernel_size=5, stride=1, padding=2),
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(6, 16, kernel_size=5, stride=1),
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(16 * 5 * 5, 120),
+            nn.Tanh(),
+            nn.Linear(120, 84),
+            nn.Tanh(),
+            nn.Linear(84, num_classes),
+        )
+
+    def forward(self, x):
+        return self.classifier(self.feature(x))
+
+
+class SplitLeNet5FEMNIST(nn.Module):
+    """
+    Split LeNet5 for FEMNIST (HCFL/LCFed/FedPer).
+      - embed : feature + classifier[:-1] → 84-dim embedding
+      - head  : Linear(84 → 62)
+    """
+    def __init__(self, num_classes=62):
+        super().__init__()
+        base = LeNet5FEMNIST(num_classes)
+        self.embed = nn.Sequential(
+            base.feature,
+            *list(base.classifier.children())[:-1]
+        )
+        self.head = list(base.classifier.children())[-1]
+
+    def forward(self, x):
+        return self.head(self.embed(x))
+
+
 class CNNMnist(nn.Module):
     def __init__(self):
         super(CNNMnist, self).__init__()
