@@ -33,7 +33,7 @@ class Client:
         # Save initial global model parameters
         initial_params = []
         for param in global_model.parameters():
-            initial_params.append(param.flatten().detach().clone())
+            initial_params.append(param.flatten().detach().clone().to(self.device))
         initial_params = torch.cat(initial_params)
         
         # copy of the global model to a local model
