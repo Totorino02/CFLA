@@ -283,7 +283,7 @@ class ServerLCFed:
             # Optional server-side eval (global_model as reference)
             if verbose and ((r + 1) % self.args.get("log_every", 10) == 0):
                 mean_loss = float(np.mean(losses)) if losses else 0.0
-                g_acc1, _ = self.evaluate(self.global_model, self.test_dataloader, k=1, return_loss=False)
+                g_acc1, _ = self.evaluate(self.global_model.to(self.device), self.test_dataloader, k=1, return_loss=False)
 
                 counts = [0] * self.num_clusters
                 for c in self.clients:

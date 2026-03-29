@@ -1,4 +1,5 @@
 import torch
+DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 import numpy as np
 import datetime
 import os
@@ -14,15 +15,15 @@ def _get_model(dataset: str, num_classes: int):
     return SplitCNNCifar(num_classes=num_classes)
 
 
-def run_lcfed_experiment(nb_runs=1, base_seed=42, dataset="mnist"):
-    from experiments.scripts.main import build_client_datasets
+def run_lcfed_experiment(nb_runs=1, base_seed=42, dataset="mnist", noise_ratio=0.0, nb_rounds=50, mu=1.0, lam=2.0):
+    from experiments.scripts.run_all_mnist import build_client_datasets
 
     for run in range(nb_runs):
         seed = base_seed + run
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        client_datasets, test_loader, num_classes = build_client_datasets(base_seed, run, dataset)
+        client_datasets, test_loader, num_classes = build_client_datasets(base_seed, run, dataset, noise_ratio=noise_ratio)
 
         stamp = datetime.datetime.now().strftime("%y-%m-%d_%H-%M")
         output_dir = os.path.join("./RESULTS", f"result_lcfed_{dataset}_{stamp}")
@@ -31,14 +32,14 @@ def run_lcfed_experiment(nb_runs=1, base_seed=42, dataset="mnist"):
         client_args = {
             "local_epochs": 3,
             "local_steps": 0,
-            "device": "cpu",
+            "device": DEVICE,
             "optimizer": torch.optim.SGD,
             "criterion": torch.nn.CrossEntropyLoss(reduction="mean"),
             "learning_rate": 0.01,
             "batch_size": 32,
             "train_fraction": 0.2,
-            "mu": 0.0,
-            "lambda": 2.0,
+            "mu": mu,
+            "lambda": lam,
             "monitor_energy": False,
             "output_dir": output_dir,
             "seed": seed,
@@ -52,9 +53,9 @@ def run_lcfed_experiment(nb_runs=1, base_seed=42, dataset="mnist"):
 
         server_args = {
             "fraction": 0.2,
-            "device": "cpu",
-            "rounds": 50,
-            "num_clusters": 10,
+            "device": DEVICE,
+            "rounds": nb_rounds,
+            "num_clusters": 3,
             "low_rank_dim": 50,
             "pca_sample_clients": 20,
             "output_dir": output_dir,
@@ -72,4 +73,4 @@ def run_lcfed_experiment(nb_runs=1, base_seed=42, dataset="mnist"):
 
 
 if __name__ == "__main__":
-    run_lcfed_experiment(nb_runs=1, base_seed=42, dataset="mnist")
+    run_lcfed_experiment(nb_runs=1, base_seed=42, dataset="mnist", nb_rounds=50, mu=1.0, lam=2.0)
