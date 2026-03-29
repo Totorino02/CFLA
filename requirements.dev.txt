@@ -1,0 +1,53 @@
+# Core ML/DL - PyTorch
+torch
+torchvision
+torchtext
+
+# Federated Learning / Energy Monitoring
+opacus
+declearn
+pyJoules
+nvidia-ml-py
+
+# Scientific computing
+numpy
+scipy
+scikit-learn
+pandas
+sympy
+mpmath
+
+# Data visualization
+matplotlib
+seaborn
+contourpy
+cycler
+fonttools
+kiwisolver
+pyparsing
+
+# Image processing
+pillow
+
+# Utilities
+tqdm
+joblib
+threadpoolctl
+h5py
+filelock
+fsspec
+networkx
+
+# Network / dataset downloading
+certifi
+charset-normalizer
+idna
+requests
+urllib3
+
+# Date/time
+pytz
+tzdata
+
+# Code formatting / linting
+ruff

@@ -50,16 +50,31 @@ class ClientMADMTOP(Client):
         # update vector of local model parameters
         delta_params = []
         updated_params = []
-        empirical_risk_grad = []
         for new_param, old_param in zip(self.local_model.parameters(), global_model.parameters()):
             delta_params.append((new_param.data - old_param.data).flatten())
             updated_params.append(new_param.data.flatten())
-            if new_param.grad is not None:
-                empirical_risk_grad.append(new_param.grad.detach().clone().flatten())
 
         delta_params = torch.cat(delta_params)
         updated_params = torch.cat(updated_params)
-        empirical_risk_grad = torch.cat(empirical_risk_grad)#.numpy()
+
+        # Empirical risk gradient: full pass over local training data (per paper Sattler et al. 2019)
+        self.local_model.zero_grad()
+        nb_batches = 0
+        for data, target in self.train_loader:
+            data, target = data.to(self.device), target.to(self.device)
+            output = self.local_model(data)
+            batch_loss = self.criterion(output, target)
+            batch_loss.backward()
+            nb_batches += 1
+
+        empirical_risk_grad = []
+        for param in self.local_model.parameters():
+            if param.grad is not None:
+                empirical_risk_grad.append((param.grad / nb_batches).detach().clone().flatten())
+            else:
+                empirical_risk_grad.append(torch.zeros(param.numel(), device=self.device))
+        empirical_risk_grad = torch.cat(empirical_risk_grad)
+
         return updated_params, delta_params, empirical_risk_grad, loss.item()
 
     def test(self):

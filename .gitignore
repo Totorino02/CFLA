@@ -4,3 +4,17 @@ results/
 **/__pycache__/
 test*
 datasets/FEMNIST
+tmp.py
+tmp
+.vscode/
+.claude
+*RESULT*
+*images*
+*.log
+*.egg-info
+result_*
+PLOTS*
+paper
+experiments/scripts/main_*.py
+experiments/scripts/ablation_*.py
+experiments/scripts/plot_sharing*.py

@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "CFLA"
+version = "0.1.1"
+description = "A framework for federated learning algorithms"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "HOUNSI Antoine", email = "antoinehounsi3@gmail.com" }
+]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch",
+    "numpy",
+    "tqdm",
+    "declearn @ git+https://gitlab.inria.fr/magnet/declearn/energy.git",
+]
+
+[project.urls]
+Homepage = "https://github.com/Totorino02/CFLA"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (géré par le formateur)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["framework", "datasets", "experiments"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
