@@ -16,20 +16,18 @@ Algorithm each round:
 import copy
 import os
 import time
-from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from framework.server.serverbase import Server
 from framework.client.client_ifca import ClientIFCA
 from framework.common.utils import average_state_dict
+from framework.server.serverbase import Server
 
 
 class ServerIFCA(Server):
-
     def __init__(self, global_model, test_dataloader, args, **kwargs):
         super().__init__()
         self.global_model = global_model
@@ -43,15 +41,15 @@ class ServerIFCA(Server):
         self.seed = int(args.get("seed", 0))
         self.rng = np.random.default_rng(self.seed)
 
-        self.clients: List[ClientIFCA] = []
+        self.clients: list[ClientIFCA] = []
         self.output_dir = args["output_dir"]
         os.makedirs(self.output_dir, exist_ok=True)
 
-        self.cluster_centers: List[Dict[str, torch.Tensor]] = []
+        self.cluster_centers: list[dict[str, torch.Tensor]] = []
         # R[cid] = last known cluster assignment (used for eval of non-selected clients)
-        self.R: List[int] = []
+        self.R: list[int] = []
 
-    def set_clients(self, clients: List[ClientIFCA]):
+    def set_clients(self, clients: list[ClientIFCA]):
         self.clients = clients
         for c in self.clients:
             c.output_dir = self.output_dir
@@ -67,11 +65,11 @@ class ServerIFCA(Server):
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "w") as f:
             f.write("round,mean_acc,std_acc,mean_loss\n")
 
-    def select_clients(self) -> List[ClientIFCA]:
+    def select_clients(self) -> list[ClientIFCA]:
         m = max(1, int(self.fraction * len(self.clients)))
         return list(self.rng.choice(self.clients, m, replace=False))
 
-    def _build_cluster_models(self) -> List[nn.Module]:
+    def _build_cluster_models(self) -> list[nn.Module]:
         """Instantiate all K cluster models on device (sent to clients)."""
         models = []
         for k in range(self.num_clusters):
@@ -82,15 +80,15 @@ class ServerIFCA(Server):
         return models
 
     @torch.no_grad()
-    def _aggregate(self, client_states: Dict[int, Dict[str, torch.Tensor]], assignments: Dict[int, int]):
+    def _aggregate(
+        self, client_states: dict[int, dict[str, torch.Tensor]], assignments: dict[int, int]
+    ):
         """Per-cluster FedAvg of clients that selected each cluster."""
         for k in range(self.num_clusters):
             members = [cid for cid, k_sel in assignments.items() if k_sel == k]
             if not members:
                 continue
-            self.cluster_centers[k] = average_state_dict(
-                [client_states[cid] for cid in members]
-            )
+            self.cluster_centers[k] = average_state_dict([client_states[cid] for cid in members])
 
     @torch.no_grad()
     def _eval_and_log(self, round_idx: int, selected_ids: set):
@@ -109,9 +107,7 @@ class ServerIFCA(Server):
                     f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
 
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
-            f.write(
-                f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n"
-            )
+            f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
     def evaluate(self, model: nn.Module, dataloader: DataLoader, return_loss: bool = False):
         model.eval()
@@ -140,9 +136,9 @@ class ServerIFCA(Server):
             # Build all K cluster models (sent to every selected client)
             cluster_models = self._build_cluster_models()
 
-            client_states: Dict[int, Dict[str, torch.Tensor]] = {}
-            assignments: Dict[int, int] = {}
-            losses: List[float] = []
+            client_states: dict[int, dict[str, torch.Tensor]] = {}
+            assignments: dict[int, int] = {}
+            losses: list[float] = []
 
             for c in selected:
                 state, k_star, loss, _ = c.train(
@@ -170,7 +166,7 @@ class ServerIFCA(Server):
                     for k in range(self.num_clusters)
                 ]
                 print(
-                    f"[Round {r+1:04d}] "
+                    f"[Round {r + 1:04d}] "
                     f"selected={len(selected_ids)}/{len(self.clients)} "
                     f"mean loss(sel)={mean_loss:.4f} "
                     f"cluster_sizes={counts}"

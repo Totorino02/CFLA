@@ -1,17 +1,18 @@
-from torch.onnx.symbolic_opset9 import detach
-from torch.utils.data import DataLoader, random_split
-import torch
 import numpy as np
+import torch
+from torch.utils.data import DataLoader, random_split
+
 
 class Client:
     """
     This is the base class for a client.
     For each type of algorithm, we would inherit from this class and implement methods
     """
+
     def __init__(self, client_id, dataset, args, model=None, **kwargs):
         self.client_id = client_id
         self.dataset = dataset
-        self.optimizer =  args["optimizer"]
+        self.optimizer = args["optimizer"]
         self.criterion = args["criterion"]
         self.device = args["device"]
         self.local_epochs = args["local_epochs"]
@@ -35,13 +36,15 @@ class Client:
         for param in global_model.parameters():
             initial_params.append(param.flatten().detach().clone().to(self.device))
         initial_params = torch.cat(initial_params)
-        
+
         # copy of the global model to a local model
         self.local_model = type(global_model)().to(self.device)
         self.local_model.load_state_dict(global_model.state_dict())
         self.local_model.train()
-        self.optimizer = torch.optim.Adam(self.local_model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
-        self.criterion = torch.nn.CrossEntropyLoss(reduction='mean') # torch.nn.MSELoss()
+        self.optimizer = torch.optim.Adam(
+            self.local_model.parameters(), lr=self.learning_rate, weight_decay=1e-4
+        )
+        self.criterion = torch.nn.CrossEntropyLoss(reduction="mean")  # torch.nn.MSELoss()
 
         training_loss = list()
         loss = 0.0
@@ -54,22 +57,24 @@ class Client:
                 loss.backward()
                 self.optimizer.step()
                 training_loss.append(loss.item())
-                if verbose :# and batch_idx % 10 == 0:
-                    print(f"Client {self.client_id}, Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item()}")
+                if verbose:  # and batch_idx % 10 == 0:
+                    print(
+                        f"Client {self.client_id}, Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item()}"
+                    )
             acc, _ = self.test()
             self.accuracies.append(acc)
             self.train_history.append(loss.item())
-        
+
         # Calculate updates (differences)
         updated_params = []
         for param in self.local_model.parameters():
             updated_params.append(param.flatten().detach())
         updated_params = torch.cat(updated_params)
-        
+
         # Return the difference (update)
         update = updated_params - initial_params
 
-        #self.train_history.append(training_loss)
+        # self.train_history.append(training_loss)
 
         return update, np.mean(training_loss)
 
@@ -85,7 +90,7 @@ class Client:
                 self.test_history.append(test_loss.item())
                 pred = output.argmax(dim=1, keepdim=True)
                 correct += pred.eq(target.view_as(pred)).sum().item()
-        accuracy = 100. * correct / len(self.test_loader.dataset)
+        accuracy = 100.0 * correct / len(self.test_loader.dataset)
         return accuracy, self.test_history
 
     def predict(self, data):
@@ -95,7 +100,6 @@ class Client:
             output = self.local_model(data)
             pred = output.argmax(dim=1, keepdim=True)
         return pred.cpu().numpy()
-        
 
     def get_params(self):
         pass

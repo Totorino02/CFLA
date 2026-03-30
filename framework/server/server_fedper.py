@@ -11,16 +11,15 @@ Maintains a global embedding Φ. Each round:
 import copy
 import os
 import time
-from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from framework.server.serverbase import Server
 from framework.client.client_fedper import ClientFedPer
 from framework.common.utils import average_state_dict
+from framework.server.serverbase import Server
 
 
 class ServerFedPer(Server):
@@ -41,13 +40,13 @@ class ServerFedPer(Server):
         self.seed = int(args.get("seed", 0))
         self.rng = np.random.default_rng(self.seed)
 
-        self.clients: List[ClientFedPer] = []
+        self.clients: list[ClientFedPer] = []
         self.output_dir = args["output_dir"]
         os.makedirs(self.output_dir, exist_ok=True)
 
-        self.global_phi: Dict[str, torch.Tensor] = {}
+        self.global_phi: dict[str, torch.Tensor] = {}
 
-    def set_clients(self, clients: List[ClientFedPer]):
+    def set_clients(self, clients: list[ClientFedPer]):
         self.clients = clients
         for c in self.clients:
             c.output_dir = self.output_dir
@@ -55,12 +54,12 @@ class ServerFedPer(Server):
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "w") as f:
             f.write("round,mean_acc,std_acc,mean_loss\n")
 
-    def select_clients(self) -> List[ClientFedPer]:
+    def select_clients(self) -> list[ClientFedPer]:
         m = max(1, int(self.fraction * len(self.clients)))
         return list(self.rng.choice(self.clients, m, replace=False))
 
     @torch.no_grad()
-    def _aggregate_embeds(self, embed_dicts: List[Dict[str, torch.Tensor]]):
+    def _aggregate_embeds(self, embed_dicts: list[dict[str, torch.Tensor]]):
         """Average embed states → global Φ, then update global_model."""
         self.global_phi = average_state_dict(embed_dicts)
         new_state = copy.deepcopy(self.global_model.state_dict())
@@ -87,11 +86,11 @@ class ServerFedPer(Server):
                     f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
 
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
-            f.write(
-                f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n"
-            )
+            f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
-    def evaluate(self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False):
+    def evaluate(
+        self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False
+    ):
         model.eval()
         correct_top1 = 0
         total = 0
@@ -119,9 +118,7 @@ class ServerFedPer(Server):
 
             embed_dicts, losses = [], []
             for c in selected:
-                embed_state, loss, _ = c.train(
-                    self.global_model, round=r, verbose=False
-                )
+                embed_state, loss, _ = c.train(self.global_model, round=r, verbose=False)
                 embed_dicts.append(embed_state)
                 losses.append(loss)
 
@@ -132,7 +129,7 @@ class ServerFedPer(Server):
                 mean_loss = float(np.mean(losses)) if losses else 0.0
                 g_acc = self.evaluate(self.global_model, self.test_dataloader)
                 print(
-                    f"[Round {r+1:04d}] "
+                    f"[Round {r + 1:04d}] "
                     f"selected={len(selected_ids)}/{len(self.clients)} "
                     f"mean loss(sel)={mean_loss:.4f} "
                     f"global acc@1={g_acc:.4f}"

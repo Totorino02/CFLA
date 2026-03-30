@@ -1,12 +1,14 @@
 import torch
+
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
-import numpy as np
 import datetime
 import os
 
+import numpy as np
+
 from framework.client.client_cgpfl import ClientCGPFL
+from framework.models.computer_vision import CNNCifar, LeNet5V1
 from framework.server.server_cgpfl import ServerCGPFL
-from framework.models.computer_vision import LeNet5V1, CNNCifar
 
 
 def _get_model(dataset: str, num_classes: int):
@@ -23,7 +25,9 @@ def run_cgpfl_experiment(nb_runs=1, base_seed=42, dataset="mnist", noise_ratio=0
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        client_datasets, test_loader, num_classes = build_client_datasets(base_seed, run, dataset, noise_ratio=noise_ratio)
+        client_datasets, test_loader, num_classes = build_client_datasets(
+            base_seed, run, dataset, noise_ratio=noise_ratio
+        )
 
         stamp = datetime.datetime.now().strftime("%y-%m-%d_%H-%M")
         output_dir = os.path.join("./RESULTS", f"result_cgpfl_{dataset}_{stamp}")

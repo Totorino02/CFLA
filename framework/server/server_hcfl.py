@@ -1,23 +1,20 @@
-from collections import defaultdict
-from datetime import datetime
-import os
-from sklearn.cluster import AgglomerativeClustering
-import torch
-import time
-from tqdm import tqdm
-import numpy as np
-from typing import List, Dict, Optional
 import copy
+import os
+import time
+from typing import Optional
+
+import numpy as np
+import torch
+from sklearn.cluster import AgglomerativeClustering
 from torch import nn
 from torch.utils.data import DataLoader
 
-from framework.server.serverbase import Server
 from framework.client.client_hcfl import ClientHCFL
-from framework.common.utils import flatten_params, average_state_dict
+from framework.common.utils import average_state_dict
+from framework.server.serverbase import Server
 
 
 class ServerHCFL(Server):
-
     def __init__(self, global_model, test_dataloader, args, **kwargs):
         super().__init__()
         self.global_model = global_model.to(args["device"])
@@ -28,14 +25,14 @@ class ServerHCFL(Server):
         self.cluster_rounds = args["cluster_rounds"]
         self.distance_threshold = args.get("distance_threshold", 0.5)
         self.clustering_metric = args.get("clustering_metric", "cosine")
-        self.n_clusters = args.get("n_clusters", None)   # if set, overrides distance_threshold
+        self.n_clusters = args.get("n_clusters", None)  # if set, overrides distance_threshold
         # λ(t) = λ₀ / (1 + α·t)^p  — contrôle le mélange Ω_k ← (1-λ)·Avg + λ·Φ
-        self.lambda_0     = float(args.get("lambda_0",     1.0))
+        self.lambda_0 = float(args.get("lambda_0", 1.0))
         self.lambda_alpha = float(args.get("lambda_alpha", 0.1))
-        self.lambda_p     = float(args.get("lambda_p",     1.0))
+        self.lambda_p = float(args.get("lambda_p", 1.0))
         self.clusters = None
-        self.clients : list[ClientHCFL]= []
-        self.selected_clients : list[ClientHCFL] = []
+        self.clients: list[ClientHCFL] = []
+        self.selected_clients: list[ClientHCFL] = []
         self.history = []
         self.specialized_models = dict()
         self.output_dir = args["output_dir"]
@@ -47,15 +44,17 @@ class ServerHCFL(Server):
             os.makedirs(self.output_dir)
 
         # State
-        self.R: List[int] = []  # cluster assignment per client index (must align with client.client_id)
-        self.cluster_centers: List[Dict[str, torch.Tensor]] = []
-        self.global_phi: Dict[str, torch.Tensor] = {}
+        self.R: list[
+            int
+        ] = []  # cluster assignment per client index (must align with client.client_id)
+        self.cluster_centers: list[dict[str, torch.Tensor]] = []
+        self.global_phi: dict[str, torch.Tensor] = {}
         self.M: Optional[torch.Tensor] = None  # [P, D]
 
         # optional metrics
         self.history = []
 
-    def set_clients(self, clients: List[ClientHCFL]):
+    def set_clients(self, clients: list[ClientHCFL]):
         self.clients = clients
         for c in self.clients:
             c.output_dir = self.output_dir
@@ -68,7 +67,7 @@ class ServerHCFL(Server):
             f.write("round,mean_acc,std_acc,mean_loss\n")
 
     @torch.no_grad()
-    def aggregate(self, client_states: Dict[int, Dict[str, torch.Tensor]], round: int = 0):
+    def aggregate(self, client_states: dict[int, dict[str, torch.Tensor]], round: int = 0):
         """
         - Φ ← Σ n_i·φ_i / Σ n_i  (moyenne pondérée des embeddings)
         - Ω_k ← (1-λ(t))·Avg({ω_i : i ∈ S_t ∩ C_k}) + λ(t)·Φ(t)
@@ -100,8 +99,10 @@ class ServerHCFL(Server):
             blended = {}
             for param_key, avg_val in avg_k.items():
                 if param_key.startswith("embed."):
-                    phi_key = param_key[len("embed."):]
-                    blended[param_key] = (1.0 - lam) * avg_val + lam * self.global_phi[phi_key].to(avg_val.device)
+                    phi_key = param_key[len("embed.") :]
+                    blended[param_key] = (1.0 - lam) * avg_val + lam * self.global_phi[phi_key].to(
+                        avg_val.device
+                    )
                 else:
                     blended[param_key] = avg_val
             self.cluster_centers[k] = blended
@@ -121,10 +122,10 @@ class ServerHCFL(Server):
         dist = 0.0
         for param_key, omega_val in self.cluster_centers[k].items():
             if param_key.startswith("embed."):
-                phi_key = param_key[len("embed."):]
+                phi_key = param_key[len("embed.") :]
                 if phi_key in self.global_phi:
                     dist += (omega_val.cpu() - self.global_phi[phi_key].cpu()).pow(2).sum().item()
-        return dist ** 0.5
+        return dist**0.5
 
     @torch.no_grad()
     def _eval_and_log(self, round_idx: int, selected_ids: set):
@@ -134,7 +135,7 @@ class ServerHCFL(Server):
         - computes per-cluster accuracy + ‖Ω_k - Φ‖ → cluster_metrics.csv
         """
         # Collect per-client and per-cluster accuracy
-        cluster_accs: Dict[int, List[float]] = {k: [] for k in range(self.num_clusters)}
+        cluster_accs: dict[int, list[float]] = {k: [] for k in range(self.num_clusters)}
         accs, losses = [], []
 
         for c in self.clients:
@@ -146,7 +147,9 @@ class ServerHCFL(Server):
             losses.append(loss)
             cluster_accs[k].append(acc)
             if c.client_id not in selected_ids:
-                with open(os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a") as f:
+                with open(
+                    os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a"
+                ) as f:
                     f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
 
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
@@ -162,14 +165,14 @@ class ServerHCFL(Server):
                 dist_k = self._omega_phi_dist(k)
                 f.write(f"{round_idx},{k},{n_k},{mean_acc_k:.6f},{dist_k:.6f},{lam:.6f}\n")
 
-    def select_clients(self, clients_subset: Optional[List[ClientHCFL]] = None) -> List[ClientHCFL]:
+    def select_clients(self, clients_subset: Optional[list[ClientHCFL]] = None) -> list[ClientHCFL]:
         """Global selection — used during pre-learning (no clusters yet)."""
         if clients_subset is None:
             clients_subset = self.clients
         m = max(1, int(self.fraction * len(clients_subset)))
         return list(self.rng.choice(clients_subset, m, replace=False))
 
-    def select_clients_per_cluster(self) -> List[ClientHCFL]:
+    def select_clients_per_cluster(self) -> list[ClientHCFL]:
         """
         Select `fraction` of clients independently within each cluster.
         Guarantees every cluster is represented at every round.
@@ -180,7 +183,9 @@ class ServerHCFL(Server):
             selected.extend(self.rng.choice(cluster_clients, m, replace=False))
         return selected
 
-    def evaluate(self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False):
+    def evaluate(
+        self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False
+    ):
         model.eval()
         correct_top1 = 0
         correct_topk = 0
@@ -235,20 +240,20 @@ class ServerHCFL(Server):
                 update_vector.append((new_param.data - old_param.data).flatten())
             updates.append(torch.cat(update_vector).cpu().numpy())
         return np.array(updates)
-    
+
     def hierarchical_clustering(self, updates):
         if self.n_clusters is not None:
             clustering = AgglomerativeClustering(
                 n_clusters=self.n_clusters,
-                metric='euclidean',
-                linkage='ward',
+                metric="euclidean",
+                linkage="ward",
             )
         else:
             clustering = AgglomerativeClustering(
                 n_clusters=None,
                 distance_threshold=self.distance_threshold,
                 metric=self.clustering_metric,
-                linkage='average',
+                linkage="average",
             )
 
         labels = clustering.fit_predict(updates)
@@ -273,12 +278,16 @@ class ServerHCFL(Server):
 
         print(f"Clusters formed: {len(self.clusters)}")
         for cluster_id, clients in self.clusters.items():
-            print(f"Cluster {cluster_id} [{len(clients)}]: {[client.client_id for client in clients]}")
+            print(
+                f"Cluster {cluster_id} [{len(clients)}]: {[client.client_id for client in clients]}"
+            )
 
         self.num_clusters = len(self.clusters)
 
         # init centers + global phi
-        self.cluster_centers = [copy.deepcopy(self.global_model.state_dict()) for _ in range(self.num_clusters)]
+        self.cluster_centers = [
+            copy.deepcopy(self.global_model.state_dict()) for _ in range(self.num_clusters)
+        ]
         self.global_phi = copy.deepcopy(self.global_model.embed.state_dict())
 
         # assigne R[cid] based on cluster membership
@@ -293,14 +302,13 @@ class ServerHCFL(Server):
         for r in range(self.cluster_rounds):
             selected = self.select_clients_per_cluster()
 
-            client_states: Dict[int, Dict[str, torch.Tensor]] = {}
-            losses: List[float] = []
+            client_states: dict[int, dict[str, torch.Tensor]] = {}
+            losses: list[float] = []
 
             for c in selected:
                 cid = c.client_id
                 k_star = self.R[cid]
                 omega_k = self.cluster_centers[k_star]
-                phi = self.global_phi
 
                 st, loss, _energy = c.train(
                     global_model=self.global_model,
@@ -322,14 +330,16 @@ class ServerHCFL(Server):
             # Optional server-side eval (global_model as reference)
             if verbose and ((r + 1) % self.args.get("log_every", 10) == 0):
                 mean_loss = float(np.mean(losses)) if losses else 0.0
-                g_acc1, _ = self.evaluate(self.global_model, self.test_dataloader, k=1, return_loss=False)
+                g_acc1, _ = self.evaluate(
+                    self.global_model, self.test_dataloader, k=1, return_loss=False
+                )
 
                 counts = [0] * self.num_clusters
                 for c in self.clients:
                     counts[self.R[c.client_id]] += 1
 
                 print(
-                    f"[Round {r+1:04d}] "
+                    f"[Round {r + 1:04d}] "
                     f"selected={len(selected)}/{len(self.clients)} "
                     f"mean loss(sel)={mean_loss:.4f} "
                     f"global acc@1={g_acc1:.4f} "
@@ -341,7 +351,6 @@ class ServerHCFL(Server):
             print(f"$HCFL training done in {dur:.1f}s")
 
         return self.cluster_centers, self.global_phi, self.R
-    
+
     def get_params(self):
         return super().get_params()
-

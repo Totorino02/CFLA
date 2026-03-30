@@ -1,49 +1,53 @@
-from torchvision.datasets import MNIST, utils
 import os
-import torch
 import shutil
-import numpy as np
 
+import numpy as np
+import torch
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
-from torch.utils.data import Dataset, DataLoader, Subset
+from torchvision.datasets import MNIST, utils
+
 
 class FEMNIST(MNIST):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False):
         super(MNIST, self).__init__(root, transform=transform, target_transform=target_transform)
         self.download = download
-        self.download_link = 'https://media.githubusercontent.com/media/GwenLegate/femnist-dataset-PyTorch/main/femnist.tar.gz'
-        self.file_md5 = 'a8a28afae0e007f1acb87e37919a21db'
+        self.download_link = "https://media.githubusercontent.com/media/GwenLegate/femnist-dataset-PyTorch/main/femnist.tar.gz"
+        self.file_md5 = "a8a28afae0e007f1acb87e37919a21db"
         self.train = train
         self.root = root
-        self.training_file = f'{self.root}/FEMNIST/processed/femnist_train.pt'
-        self.test_file = f'{self.root}/FEMNIST/processed/femnist_test.pt'
-        self.user_list = f'{self.root}/FEMNIST/processed/femnist_user_keys.pt'
+        self.training_file = f"{self.root}/FEMNIST/processed/femnist_train.pt"
+        self.test_file = f"{self.root}/FEMNIST/processed/femnist_test.pt"
+        self.user_list = f"{self.root}/FEMNIST/processed/femnist_user_keys.pt"
 
-        if not os.path.exists(f'{self.root}/FEMNIST/processed/femnist_test.pt') \
-                or not os.path.exists(f'{self.root}/FEMNIST/processed/femnist_train.pt'):
+        if not os.path.exists(
+            f"{self.root}/FEMNIST/processed/femnist_test.pt"
+        ) or not os.path.exists(f"{self.root}/FEMNIST/processed/femnist_train.pt"):
             if self.download:
                 self.dataset_download()
             else:
-                raise RuntimeError('Dataset not found, set parameter download=True to download')
+                raise RuntimeError("Dataset not found, set parameter download=True to download")
 
         if self.train:
             data_file = self.training_file
         else:
             data_file = self.test_file
 
-        cache_file = data_file.replace('.pt', '_cached.pt')
+        cache_file = data_file.replace(".pt", "_cached.pt")
         if os.path.exists(cache_file):
             cached = torch.load(cache_file, weights_only=True)
-            self.data = cached['data']
-            self.targets = cached['targets']
-            self.users = cached['users']
+            self.data = cached["data"]
+            self.targets = cached["targets"]
+            self.users = cached["users"]
         else:
             data_targets_users = torch.load(data_file, weights_only=False)
             # Pre-reshape to [N, 1, 28, 28] once at load time to avoid per-sample PIL conversion
             self.data = torch.Tensor(data_targets_users[0]).reshape(-1, 1, 28, 28)
             self.targets = torch.Tensor(data_targets_users[1])
             self.users = data_targets_users[2]
-            torch.save({'data': self.data, 'targets': self.targets, 'users': self.users}, cache_file)
+            torch.save(
+                {"data": self.data, "targets": self.targets, "users": self.users}, cache_file
+            )
         self.user_ids = torch.load(self.user_list, weights_only=False)
 
     def __getitem__(self, index):
@@ -56,27 +60,36 @@ class FEMNIST(MNIST):
         return img, target, user
 
     def dataset_download(self):
-        paths = [f'{self.root}/FEMNIST/raw/', f'{self.root}/FEMNIST/processed/']
+        paths = [f"{self.root}/FEMNIST/raw/", f"{self.root}/FEMNIST/processed/"]
         for path in paths:
             if not os.path.exists(path):
                 os.makedirs(path)
 
         # download files
-        filename = self.download_link.split('/')[-1]
-        utils.download_and_extract_archive(self.download_link, download_root=f'{self.root}/FEMNIST/raw/', filename=filename, md5=self.file_md5)
+        filename = self.download_link.split("/")[-1]
+        utils.download_and_extract_archive(
+            self.download_link,
+            download_root=f"{self.root}/FEMNIST/raw/",
+            filename=filename,
+            md5=self.file_md5,
+        )
 
-        files = ['femnist_train.pt', 'femnist_test.pt', 'femnist_user_keys.pt']
+        files = ["femnist_train.pt", "femnist_test.pt", "femnist_user_keys.pt"]
         for file in files:
             # move to processed dir
-            shutil.move(os.path.join(f'{self.root}/FEMNIST/raw/', file), f'{self.root}/FEMNIST/processed/')
+            shutil.move(
+                os.path.join(f"{self.root}/FEMNIST/raw/", file), f"{self.root}/FEMNIST/processed/"
+            )
 
 
 # ---------------------------------------------------------------------------
 # Wrapper — strips the user field so standard (img, target) is returned
 # ---------------------------------------------------------------------------
 
+
 class _FEMNISTWrapper(Dataset):
     """Wraps FEMNIST to return (img, target) instead of (img, target, user)."""
+
     def __init__(self, base_ds):
         self.base = base_ds
 
@@ -91,6 +104,7 @@ class _FEMNISTWrapper(Dataset):
 # ---------------------------------------------------------------------------
 # Dataset builder — Dirichlet partitioning on 62 classes
 # ---------------------------------------------------------------------------
+
 
 def build_client_datasets_femnist(
     base_seed: int,
@@ -115,15 +129,17 @@ def build_client_datasets_femnist(
     """
     num_classes = 62
     # Data is pre-shaped as [1, 28, 28] tensors — ToTensor() not needed
-    transform = transforms.Compose([
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
 
-    train_femnist = FEMNIST(root=data_root, train=True,  transform=transform, download=True)
-    test_femnist  = FEMNIST(root=data_root, train=False, transform=transform, download=True)
+    train_femnist = FEMNIST(root=data_root, train=True, transform=transform, download=True)
+    test_femnist = FEMNIST(root=data_root, train=False, transform=transform, download=True)
 
     train_ds = _FEMNISTWrapper(train_femnist)
-    test_ds  = _FEMNISTWrapper(test_femnist)
+    test_ds = _FEMNISTWrapper(test_femnist)
 
     targets = train_femnist.targets.long().numpy()  # shape [N]
 

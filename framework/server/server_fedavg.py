@@ -1,10 +1,9 @@
-from collections import defaultdict
+import numpy as np
+import torch
 
 from framework.client.clientbase import Client
 from framework.server.serverbase import Server
-import numpy as np
-import torch
-import tqdm
+
 
 class ServerFedAvg(Server):
     """
@@ -26,23 +25,23 @@ class ServerFedAvg(Server):
         self.history = []
         self.test_loss = []
         self.accuracies = []
-        self.clients : list[Client]= []
-        self.selected_clients : list[Client] = []
+        self.clients: list[Client] = []
+        self.selected_clients: list[Client] = []
         self.train_loss_check = list()
         self.rng = np.random.default_rng(args.get("seed", 0))
-
 
     def train(self, verbose=False):
         for epoch in range(self.nb_epochs):
             self.global_model, loss = self.federated_learning(self.global_model, self.clients)
             if verbose:
-                print(f"Epoch {epoch+1}/{self.nb_epochs} | Loss: {loss}")
+                print(f"Epoch {epoch + 1}/{self.nb_epochs} | Loss: {loss}")
             self.history.append(loss)
-            acc_top1, last_lost = self.evaluate(self.global_model, self.test_dataloader, return_loss=True)
+            acc_top1, last_lost = self.evaluate(
+                self.global_model, self.test_dataloader, return_loss=True
+            )
             self.accuracies.append(acc_top1)
             self.test_loss.append(last_lost)
         return self.global_model, self.history
-
 
     def federated_learning(self, model, clients_subset):
         """
@@ -59,14 +58,14 @@ class ServerFedAvg(Server):
         total_samples = 0
         weighted_updates = None
         total_weighted_loss = 0.0
-        
+
         for client in selected_clients:
             data_size = len(client.train_loader.dataset)
             total_samples += data_size
             update, loss = client.train(model)  # update = difference
             total_weighted_loss += loss * data_size
             self.train_loss_check.append(loss)
-            
+
             if weighted_updates is None:
                 weighted_updates = update * data_size
             else:
@@ -81,11 +80,11 @@ class ServerFedAvg(Server):
         with torch.no_grad():
             for param in model.parameters():
                 param_size = param.numel()
-                delta = avg_update[offset: offset + param_size]
+                delta = avg_update[offset : offset + param_size]
                 delta = delta.reshape(param.size())
                 param.data += delta  # Addition of updates
                 offset += param_size
-        
+
         return model, mean_loss
 
     def aggregate(self, client_updates):
@@ -119,7 +118,7 @@ class ServerFedAvg(Server):
                 last_lost = loss.item()
 
         acc_top1 = correct_top1 / total
-        avg_loss = total_loss / total
+        total_loss / total
 
         if return_loss:
             return acc_top1, last_lost
@@ -131,4 +130,3 @@ class ServerFedAvg(Server):
 
     def get_params(self):
         pass
-

@@ -1,15 +1,19 @@
+from typing import Optional
 
-from typing import Dict, List, Optional
 import torch
 from torch import nn
 
 
 def convert_seconds_to_hhmmss(seconds):
-    return str(seconds // 3600) + ":" + str((seconds % 3600) // 60) + ":" + str(round(seconds % 60, 2))
+    return (
+        str(seconds // 3600) + ":" + str((seconds % 3600) // 60) + ":" + str(round(seconds % 60, 2))
+    )
+
 
 # -------------------------
 # Helpers: flatten, average, etc.
 # -------------------------
+
 
 @torch.no_grad()
 def flatten_params(module: nn.Module, device: Optional[torch.device] = None) -> torch.Tensor:
@@ -21,8 +25,9 @@ def flatten_params(module: nn.Module, device: Optional[torch.device] = None) -> 
         vecs.append(t.reshape(-1))
     return torch.cat(vecs, dim=0)
 
+
 @torch.no_grad()
-def average_state_dict(dicts: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+def average_state_dict(dicts: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     out = {k: v.detach().clone() for k, v in dicts[0].items()}
     for d in dicts[1:]:
         for k in out:
@@ -30,6 +35,7 @@ def average_state_dict(dicts: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.
     for k in out:
         out[k].mul_(1.0 / len(dicts))
     return out
+
 
 @torch.no_grad()
 def pca_projection_matrix(W: torch.Tensor, D: int) -> torch.Tensor:
@@ -41,6 +47,7 @@ def pca_projection_matrix(W: torch.Tensor, D: int) -> torch.Tensor:
     q = min(D, X.shape[0], X.shape[1])
     _, _, V = torch.pca_lowrank(X, q=q, center=False)
     return V[:, :D].contiguous()
+
 
 @torch.no_grad()
 def cosine_sim(a: torch.Tensor, b: torch.Tensor, eps: float = 1e-12) -> float:

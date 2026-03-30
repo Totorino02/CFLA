@@ -3,8 +3,10 @@ from torch import nn
 
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, output_size, vocab_size=None, dropout=0.2):
-        super(LSTMModel, self).__init__()
+    def __init__(
+        self, input_size, hidden_size, num_layers, output_size, vocab_size=None, dropout=0.2
+    ):
+        super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -26,7 +28,9 @@ class LSTMModel(nn.Module):
         embedded = self.embedding(text)
 
         # pack sequence
-        packed_embedded = nn.utils.rnn.pack_padded_sequence(embedded, text_lengths, batch_first=True, enforce_sorted=False)
+        packed_embedded = nn.utils.rnn.pack_padded_sequence(
+            embedded, text_lengths, batch_first=True, enforce_sorted=False
+        )
         packed_out, (h_n, c_n) = self.lstm(packed_embedded, (h_0, c_0))
 
         # unpack sequence

@@ -1,28 +1,18 @@
 import os
-import copy
-import time
-import math
-import random
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Optional
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from sklearn.cluster import KMeans
-from torch.utils.data import random_split, DataLoader
+from torch.utils.data import DataLoader, random_split
+
 from framework.client.clientbase import Client
 from framework.common.utils import flatten_params
-
-
-
 
 RAPL_ENERGY_UNITS = 1e6
 NVML_NVIDIA_UNITS = 1e3
 
-class ClientHCFL(Client):
 
+class ClientHCFL(Client):
     def __init__(self, client_id, dataset, args, output_dir, **kwargs):
         # You can inherit from your framework.client.clientbase.Client if you want;
         # kept standalone for clarity.
@@ -38,7 +28,7 @@ class ClientHCFL(Client):
         self.train_fraction = args.get("train_fraction", 0.8)
 
         # μ : coefficient de régularisation vers le centre de cluster (statique, indépendant de λ)
-        self.mu          = float(args.get("mu", 1.0))
+        self.mu = float(args.get("mu", 1.0))
         self.local_steps = int(args.get("local_steps", 0))  # if >0, overrides epochs loops
         self.monitor_energy = args.get("monitor_energy", False)
 
@@ -46,7 +36,9 @@ class ClientHCFL(Client):
         train_size = int(len(dataset) * self.train_fraction)
         test_size = len(dataset) - train_size
         generator = torch.Generator().manual_seed(args.get("seed", 0) + client_id)
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
+        train_dataset, test_dataset = random_split(
+            dataset, [train_size, test_size], generator=generator
+        )
 
         self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
         self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
@@ -59,7 +51,9 @@ class ClientHCFL(Client):
 
         # IO
         os.makedirs(os.path.join(self.output_dir, f"client_{self.client_id}"), exist_ok=True)
-        with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w") as f:
+        with open(
+            os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w"
+        ) as f:
             f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
     def set_M(self, M: torch.Tensor):
@@ -84,22 +78,22 @@ class ClientHCFL(Client):
         return correct / max(1, total), correct, test_loss
 
     @torch.no_grad()
-    def get_full_state(self) -> Dict[str, torch.Tensor]:
+    def get_full_state(self) -> dict[str, torch.Tensor]:
         return {k: v.detach().cpu() for k, v in self.local_model.state_dict().items()}
 
     @torch.no_grad()
-    def get_embed_state(self) -> Dict[str, torch.Tensor]:
+    def get_embed_state(self) -> dict[str, torch.Tensor]:
         # IMPORTANT: returned without "embed." prefix (server keeps Φ as embed-only state_dict)
         return {k: v.detach().cpu() for k, v in self.local_model.embed.state_dict().items()}
 
     def train(
         self,
         global_model: nn.Module,
-        omega_cluster: Dict[str, torch.Tensor] = None,
+        omega_cluster: dict[str, torch.Tensor] = None,
         verbose: bool = False,
         save_metrics: bool = True,
-        **kwargs
-    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor, float, dict]:
+        **kwargs,
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, float, dict]:
         """
         This method trains the local model on the local dataset.
         if phi_global and omega_cluster are provided, it performs the LCFed training with the additional regularization terms.
@@ -124,11 +118,11 @@ class ClientHCFL(Client):
         energy_monitor = None
         if self.monitor_energy:
             from declearn.main.utils._energy_monitor import EnergyMonitor  # type: ignore
+
             energy_monitor = EnergyMonitor()
             energy_monitor.start()
 
         if omega_cluster is None:
-
             # Standard local training (no clustering regularization)
             for epoch in range(self.local_epochs):
                 for data, target in self.train_loader:
@@ -146,12 +140,15 @@ class ClientHCFL(Client):
             acc_after, _, _ = self.evaluate(self.local_model)
 
             if save_metrics:
-                with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a") as f:
+                with open(
+                    os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a"
+                ) as f:
                     e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
-                    f.write(f"{kwargs.get('round',0)},{loss_val},{acc_before},{acc_after},{e_pkg0},0.0\n")
+                    f.write(
+                        f"{kwargs.get('round', 0)},{loss_val},{acc_before},{acc_after},{e_pkg0},0.0\n"
+                    )
 
             return self.get_full_state(), loss_val, energy_consumed
-
 
         # Prépare Ω_{k*} figé sur le device
         omega_ref = type(global_model)().to(self.device)
@@ -207,7 +204,7 @@ class ClientHCFL(Client):
             energy_consumed = energy_monitor.stop()
 
         acc_after, _, _ = self.evaluate(self.local_model)
-        
+
         vec = flatten_params(self.local_model, device=self.device)
 
         # Energy ratio (optional, similar to your FLHC)
@@ -227,13 +224,17 @@ class ClientHCFL(Client):
             energy_ratio = client_energy / denom
 
         if save_metrics:
-            with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a") as f:
+            with open(
+                os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a"
+            ) as f:
                 e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
-                f.write(f"{kwargs.get('round',0)},{loss_val},{acc_before},{acc_after},{e_pkg0},{energy_ratio}\n")
+                f.write(
+                    f"{kwargs.get('round', 0)},{loss_val},{acc_before},{acc_after},{e_pkg0},{energy_ratio}\n"
+                )
 
         if verbose:
             print(
-                f"Client {self.client_id} | Round {kwargs.get('round',0)} | "
+                f"Client {self.client_id} | Round {kwargs.get('round', 0)} | "
                 f"Loss {loss_val:.4f} | Acc {acc_before:.4f}->{acc_after:.4f}"
             )
 

@@ -5,8 +5,8 @@ from framework.client.clientbase import Client
 
 class Server(ABC):
     def __init__(self):
-        self.clients : list[Client] = []
-        self.clusters : dict[int, list] = dict()
+        self.clients: list[Client] = []
+        self.clusters: dict[int, list] = dict()
 
     @abstractmethod
     def train(self):
@@ -26,6 +26,3 @@ class Server(ABC):
 
     def set_clients(self, clients):
         self.clients = clients
-
-
-

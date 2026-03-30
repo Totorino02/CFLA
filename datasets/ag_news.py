@@ -17,8 +17,7 @@ from collections import Counter
 import numpy as np
 import requests
 import torch
-from torch.utils.data import Dataset, DataLoader, Subset
-
+from torch.utils.data import DataLoader, Dataset, Subset
 
 # ---------------------------------------------------------------------------
 # Raw data loading — bypasses torchtext C extension
@@ -26,7 +25,7 @@ from torch.utils.data import Dataset, DataLoader, Subset
 
 _AG_NEWS_URLS = {
     "train": "https://raw.githubusercontent.com/mhjabreel/CharCnn_Keras/master/data/ag_news_csv/train.csv",
-    "test":  "https://raw.githubusercontent.com/mhjabreel/CharCnn_Keras/master/data/ag_news_csv/test.csv",
+    "test": "https://raw.githubusercontent.com/mhjabreel/CharCnn_Keras/master/data/ag_news_csv/test.csv",
 }
 
 
@@ -53,8 +52,8 @@ def _load_ag_news_csv(split: str, data_root: str) -> list:
         for row in reader:
             if len(row) < 3:
                 continue
-            label = int(row[0]) - 1          # 1-indexed → 0-indexed
-            text  = row[1] + " " + row[2]    # title + description
+            label = int(row[0]) - 1  # 1-indexed → 0-indexed
+            text = row[1] + " " + row[2]  # title + description
             rows.append((label, text))
     return rows
 
@@ -63,10 +62,11 @@ def _load_ag_news_csv(split: str, data_root: str) -> list:
 # Tokenizer & vocabulary
 # ---------------------------------------------------------------------------
 
+
 def _tokenize(text: str) -> list:
     """Lowercase + strip non-alphanumeric, split on whitespace."""
     text = text.lower()
-    text = re.sub(r'[^a-z0-9\s]', ' ', text)
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
     return text.split()
 
 
@@ -87,6 +87,7 @@ def build_vocab(tokenized_texts: list, max_vocab: int = 25000) -> dict:
 # PyTorch Dataset
 # ---------------------------------------------------------------------------
 
+
 class AGNewsDataset(Dataset):
     """
     AG News dataset as a PyTorch Dataset.
@@ -94,6 +95,7 @@ class AGNewsDataset(Dataset):
     Each item is (token_ids: LongTensor[max_len], label: LongTensor scalar).
     Labels are 0-indexed (original torchtext labels are 1-indexed).
     """
+
     def __init__(self, tokens: list, labels: list, vocab: dict, max_len: int = 128):
         self.tokens = tokens
         self.labels = labels
@@ -106,7 +108,7 @@ class AGNewsDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        ids = [self.vocab.get(w, self._UNK) for w in self.tokens[idx][:self.max_len]]
+        ids = [self.vocab.get(w, self._UNK) for w in self.tokens[idx][: self.max_len]]
         ids += [self._PAD] * (self.max_len - len(ids))
         return (
             torch.tensor(ids, dtype=torch.long),
@@ -117,6 +119,7 @@ class AGNewsDataset(Dataset):
 # ---------------------------------------------------------------------------
 # Dataset builder — loads AG News, builds vocab, Dirichlet FL partitioning
 # ---------------------------------------------------------------------------
+
 
 def build_client_datasets_agnews(
     base_seed: int,
@@ -143,20 +146,20 @@ def build_client_datasets_agnews(
 
     # ---- Load raw data (CSV download, no torchtext C extension needed) ----
     train_raw = _load_ag_news_csv("train", data_root)
-    test_raw  = _load_ag_news_csv("test",  data_root)
+    test_raw = _load_ag_news_csv("test", data_root)
 
     # ---- Tokenize ----
     train_tokens = [_tokenize(text) for _, text in train_raw]
-    test_tokens  = [_tokenize(text) for _, text in test_raw]
+    test_tokens = [_tokenize(text) for _, text in test_raw]
     train_labels = [lbl for lbl, _ in train_raw]
-    test_labels  = [lbl for lbl, _ in test_raw]
+    test_labels = [lbl for lbl, _ in test_raw]
 
     # ---- Build vocabulary from training set only ----
     vocab = build_vocab(train_tokens, max_vocab=max_vocab)
 
     # ---- Full datasets ----
     train_ds = AGNewsDataset(train_tokens, train_labels, vocab, max_len=max_len)
-    test_ds  = AGNewsDataset(test_tokens,  test_labels,  vocab, max_len=max_len)
+    test_ds = AGNewsDataset(test_tokens, test_labels, vocab, max_len=max_len)
 
     # ---- Dirichlet partitioning on 4 classes ----
     targets = np.array(train_labels)

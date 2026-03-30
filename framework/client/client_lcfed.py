@@ -9,20 +9,12 @@
 
 from __future__ import annotations
 
-import os
 import copy
-import time
-import math
-import random
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+import os
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import random_split, DataLoader
-from sklearn.cluster import KMeans
+from torch.utils.data import DataLoader, random_split
 
 from framework.common.utils import flatten_params
 
@@ -40,14 +32,12 @@ NVML_NVIDIA_UNITS = 1e3
 # and forward(x) works.
 # -------------------------
 
+
 class SplitModelExample(nn.Module):
     def __init__(self, in_dim: int = 784, hid: int = 256, n_classes: int = 10):
         super().__init__()
         self.embed = nn.Sequential(
-            nn.Linear(in_dim, hid),
-            nn.ReLU(),
-            nn.Linear(hid, hid),
-            nn.ReLU()
+            nn.Linear(in_dim, hid), nn.ReLU(), nn.Linear(hid, hid), nn.ReLU()
         )
         self.head = nn.Linear(hid, n_classes)
 
@@ -60,6 +50,7 @@ class SplitModelExample(nn.Module):
 # ============================================================
 # ClientLCFed
 # ============================================================
+
 
 class ClientLCFed:
     """
@@ -85,8 +76,8 @@ class ClientLCFed:
         self.train_fraction = args.get("train_fraction", 0.8)
 
         # LCFed-specific
-        self.mu = float(args.get("mu", 2.0))     # cluster reg
-        self.lam = float(args.get("lambda", 1.0)) # global embedding reg
+        self.mu = float(args.get("mu", 2.0))  # cluster reg
+        self.lam = float(args.get("lambda", 1.0))  # global embedding reg
         self.local_steps = int(args.get("local_steps", 0))  # if >0, overrides epochs loops
         self.monitor_energy = args.get("monitor_energy", False)
 
@@ -94,7 +85,9 @@ class ClientLCFed:
         train_size = int(len(dataset) * self.train_fraction)
         test_size = len(dataset) - train_size
         generator = torch.Generator().manual_seed(args.get("seed", 0) + client_id)
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
+        train_dataset, test_dataset = random_split(
+            dataset, [train_size, test_size], generator=generator
+        )
 
         self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
         self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
@@ -103,17 +96,19 @@ class ClientLCFed:
         self.local_model: nn.Module = None
 
         # Low-rank projection matrix M (P x D) broadcast by server
-        self.M: Optional[torch.Tensor] = None
+        self.M: torch.Tensor | None = None
 
         # IO
         os.makedirs(os.path.join(self.output_dir, f"client_{self.client_id}"), exist_ok=True)
-        with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w") as f:
+        with open(
+            os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w"
+        ) as f:
             f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
     def set_M(self, M: torch.Tensor):
         self.M = M.detach().to(self.device)
 
-    def evaluate(self, model: Optional[nn.Module] = None):
+    def evaluate(self, model: nn.Module | None = None):
         if model is None:
             model = self.local_model
         model.eval()
@@ -132,23 +127,23 @@ class ClientLCFed:
         return correct / max(1, total), correct, test_loss
 
     @torch.no_grad()
-    def get_full_state(self) -> Dict[str, torch.Tensor]:
+    def get_full_state(self) -> dict[str, torch.Tensor]:
         return {k: v.detach().cpu() for k, v in self.local_model.state_dict().items()}
 
     @torch.no_grad()
-    def get_embed_state(self) -> Dict[str, torch.Tensor]:
+    def get_embed_state(self) -> dict[str, torch.Tensor]:
         # IMPORTANT: returned without "embed." prefix (server keeps Φ as embed-only state_dict)
         return {k: v.detach().cpu() for k, v in self.local_model.embed.state_dict().items()}
 
     def train(
         self,
         global_model: nn.Module,
-        phi_global: Dict[str, torch.Tensor] = None,
-        omega_cluster: Dict[str, torch.Tensor] = None,
+        phi_global: dict[str, torch.Tensor] = None,
+        omega_cluster: dict[str, torch.Tensor] = None,
         verbose: bool = False,
         save_metrics: bool = True,
-        **kwargs
-    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor, float, dict]:
+        **kwargs,
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, float, dict]:
         """
         Returns:
           - full_state_dict (cpu) of updated local ω_i
@@ -170,6 +165,7 @@ class ClientLCFed:
         energy_monitor = None
         if self.monitor_energy:
             from declearn.main.utils._energy_monitor import EnergyMonitor  # type: ignore
+
             energy_monitor = EnergyMonitor()
             energy_monitor.start()
 
@@ -264,13 +260,17 @@ class ClientLCFed:
             energy_ratio = client_energy / denom
 
         if save_metrics:
-            with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a") as f:
+            with open(
+                os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a"
+            ) as f:
                 e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
-                f.write(f"{kwargs.get('round',0)},{loss_val},{acc_before},{acc_after},{e_pkg0},{energy_ratio}\n")
+                f.write(
+                    f"{kwargs.get('round', 0)},{loss_val},{acc_before},{acc_after},{e_pkg0},{energy_ratio}\n"
+                )
 
         if verbose:
             print(
-                f"Client {self.client_id} | Round {kwargs.get('round',0)} | "
+                f"Client {self.client_id} | Round {kwargs.get('round', 0)} | "
                 f"Loss {loss_val:.4f} | Acc {acc_before:.4f}->{acc_after:.4f}"
             )
 

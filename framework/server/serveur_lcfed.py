@@ -8,27 +8,28 @@
 
 from __future__ import annotations
 
-import os
 import copy
-import time
-import math
+import os
 import random
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+import time
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import random_split, DataLoader
-from sklearn.cluster import KMeans
+from torch.utils.data import DataLoader
 
-from framework.common.utils import flatten_params, pca_projection_matrix, cosine_sim, average_state_dict
 from framework.client.client_lcfed import ClientLCFed
+from framework.common.utils import (
+    average_state_dict,
+    cosine_sim,
+    flatten_params,
+    pca_projection_matrix,
+)
 
 # ============================================================
 # ServerLCFed
 # ============================================================
+
 
 class ServerLCFed:
     """
@@ -63,20 +64,22 @@ class ServerLCFed:
         self.seed = int(args.get("seed", 0))
         self.rng = random.Random(self.seed)
 
-        self.clients: List[ClientLCFed] = []
+        self.clients: list[ClientLCFed] = []
         self.output_dir = args["output_dir"]
         os.makedirs(self.output_dir, exist_ok=True)
 
         # State
-        self.R: List[int] = []  # cluster assignment per client index (must align with client.client_id)
-        self.cluster_centers: List[Dict[str, torch.Tensor]] = []
-        self.global_phi: Dict[str, torch.Tensor] = {}
-        self.M: Optional[torch.Tensor] = None  # [P, D]
+        self.R: list[
+            int
+        ] = []  # cluster assignment per client index (must align with client.client_id)
+        self.cluster_centers: list[dict[str, torch.Tensor]] = []
+        self.global_phi: dict[str, torch.Tensor] = {}
+        self.M: torch.Tensor | None = None  # [P, D]
 
         # optional metrics
         self.history = []
 
-    def set_clients(self, clients: List[ClientLCFed]):
+    def set_clients(self, clients: list[ClientLCFed]):
         self.clients = clients
         for c in self.clients:
             c.output_dir = self.output_dir
@@ -87,7 +90,9 @@ class ServerLCFed:
         self.R = [self.rng.randrange(self.num_clusters) for _ in range(max_id + 1)]
 
         # init centers + global phi
-        self.cluster_centers = [copy.deepcopy(self.global_model.state_dict()) for _ in range(self.num_clusters)]
+        self.cluster_centers = [
+            copy.deepcopy(self.global_model.state_dict()) for _ in range(self.num_clusters)
+        ]
         self.global_phi = copy.deepcopy(self.global_model.embed.state_dict())
 
         # Initialize server metrics CSV
@@ -119,7 +124,7 @@ class ServerLCFed:
             c.set_M(self.M)
 
     @torch.no_grad()
-    def low_rank_of_center(self, center_state: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def low_rank_of_center(self, center_state: dict[str, torch.Tensor]) -> torch.Tensor:
         """
         Compute z_k = vec(Ω_k) @ M
         """
@@ -131,11 +136,13 @@ class ServerLCFed:
         return (vec @ self.M).detach()
 
     @torch.no_grad()
-    def update_assignments(self, client_z: Dict[int, torch.Tensor]):
+    def update_assignments(self, client_z: dict[int, torch.Tensor]):
         """
         R_i = argmax_k cos(z_i, z_k_center)
         """
-        centers_z = [self.low_rank_of_center(self.cluster_centers[k]).cpu() for k in range(self.num_clusters)]
+        centers_z = [
+            self.low_rank_of_center(self.cluster_centers[k]).cpu() for k in range(self.num_clusters)
+        ]
         for cid, zi in client_z.items():
             zi = zi.cpu()
             sims = [cosine_sim(zi, centers_z[k]) for k in range(self.num_clusters)]
@@ -144,7 +151,7 @@ class ServerLCFed:
             self.R[cid] = best_k
 
     @torch.no_grad()
-    def aggregate(self, client_states: Dict[int, Dict[str, torch.Tensor]]):
+    def aggregate(self, client_states: dict[int, dict[str, torch.Tensor]]):
         """
         - global Φ: average embedding states from all participating clients
         - Ω_k: average full model states within each cluster among participating clients
@@ -191,19 +198,25 @@ class ServerLCFed:
             accs.append(acc)
             losses.append(loss)
             if c.client_id not in selected_ids:
-                with open(os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a") as f:
+                with open(
+                    os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a"
+                ) as f:
                     f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
 
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
             f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
-    def select_clients(self, clients_subset: Optional[List[ClientLCFed]] = None) -> List[ClientLCFed]:
+    def select_clients(
+        self, clients_subset: list[ClientLCFed] | None = None
+    ) -> list[ClientLCFed]:
         if clients_subset is None:
             clients_subset = self.clients
         m = max(1, int(self.fraction * len(clients_subset)))
         return list(self.rng.sample(clients_subset, m))
 
-    def evaluate(self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False):
+    def evaluate(
+        self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False
+    ):
         model.eval()
         correct_top1 = 0
         correct_topk = 0
@@ -249,9 +262,9 @@ class ServerLCFed:
             selected_ids = {c.client_id for c in selected}
 
             # On entraîne uniquement les clients sélectionnés
-            client_states: Dict[int, Dict[str, torch.Tensor]] = {}
-            client_z: Dict[int, torch.Tensor] = {}
-            losses: List[float] = []
+            client_states: dict[int, dict[str, torch.Tensor]] = {}
+            client_z: dict[int, torch.Tensor] = {}
+            losses: list[float] = []
 
             for c in selected:
                 cid = c.client_id
@@ -264,7 +277,7 @@ class ServerLCFed:
                     phi_global=phi,
                     omega_cluster=omega_k,
                     round=r,
-                    verbose=False
+                    verbose=False,
                 )
 
                 client_states[cid] = st
@@ -283,14 +296,16 @@ class ServerLCFed:
             # Optional server-side eval (global_model as reference)
             if verbose and ((r + 1) % self.args.get("log_every", 10) == 0):
                 mean_loss = float(np.mean(losses)) if losses else 0.0
-                g_acc1, _ = self.evaluate(self.global_model.to(self.device), self.test_dataloader, k=1, return_loss=False)
+                g_acc1, _ = self.evaluate(
+                    self.global_model.to(self.device), self.test_dataloader, k=1, return_loss=False
+                )
 
                 counts = [0] * self.num_clusters
                 for c in self.clients:
                     counts[self.R[c.client_id]] += 1
 
                 print(
-                    f"[Round {r+1:04d}] "
+                    f"[Round {r + 1:04d}] "
                     f"selected={len(selected_ids)}/{len(self.clients)} "
                     f"mean loss(sel)={mean_loss:.4f} "
                     f"global acc@1={g_acc1:.4f} "

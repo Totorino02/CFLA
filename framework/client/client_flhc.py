@@ -1,21 +1,21 @@
-import numpy as np
-import torch
-from torch.utils.data import random_split, DataLoader
-from framework.client.clientbase import Client
-from torch.nn import Module
 import os
 
+import torch
+from torch.nn import Module
+from torch.utils.data import DataLoader, random_split
+
+from framework.client.clientbase import Client
 
 RAPL_ENERGY_UNITS = 1e6
 NVML_NVIDIA_UNITS = 1e3
 
-class ClientFLHC(Client):
 
+class ClientFLHC(Client):
     def __init__(self, client_id, dataset, args, output_dir, **kwargs):
         super().__init__(client_id, dataset, args, **kwargs)
-        self.local_model : Module = None
+        self.local_model: Module = None
         self.device = args["device"]
-        self.criterion = torch.nn.CrossEntropyLoss(reduction='mean') # args["criterion"]
+        self.criterion = torch.nn.CrossEntropyLoss(reduction="mean")  # args["criterion"]
         self.optimizer = args["optimizer"]
         self.local_epochs = args["local_epochs"]
         self.learning_rate = args["learning_rate"]
@@ -25,15 +25,19 @@ class ClientFLHC(Client):
         train_size = int(len(dataset) * args["train_fraction"])
         test_size = len(dataset) - train_size
         generator = torch.Generator().manual_seed(args.get("seed", 0) + client_id)
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
+        train_dataset, test_dataset = random_split(
+            dataset, [train_size, test_size], generator=generator
+        )
         self.train_loader = DataLoader(train_dataset, batch_size=args["batch_size"], shuffle=True)
         self.test_loader = DataLoader(test_dataset, batch_size=args["batch_size"], shuffle=False)
 
         if not os.path.exists(os.path.join(self.output_dir, f"client_{self.client_id}")):
             os.makedirs(os.path.join(self.output_dir, f"client_{self.client_id}"))
-        
+
         # create metrics.csv file
-        with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w") as f:
+        with open(
+            os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w"
+        ) as f:
             f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
     def train(self, global_model=None, verbose=False, save_metrics=True, **kwargs):
@@ -49,17 +53,20 @@ class ClientFLHC(Client):
         self.local_model = type(global_model)().to(self.device)
         self.local_model.load_state_dict(global_model.state_dict())
         self.local_model.train()
-        self.optimizer = torch.optim.SGD(params=self.local_model.parameters(), lr=self.learning_rate)
+        self.optimizer = torch.optim.SGD(
+            params=self.local_model.parameters(), lr=self.learning_rate
+        )
 
         # training on local data
         loss = torch.tensor(0.0)
 
         acc_before, _, _ = self.evaluate()
-        
+
         # Start energy monitoring (Linux/RAPL only)
         energy_monitor = None
         if self.monitor_energy:
             from declearn.main.utils._energy_monitor import EnergyMonitor  # type: ignore
+
             energy_monitor = EnergyMonitor()
             energy_monitor.start()
 
@@ -71,7 +78,7 @@ class ClientFLHC(Client):
                 loss = self.criterion(output, target)
                 loss.backward()
                 self.optimizer.step()
-        
+
         # Stop energy monitoring and get results
         energy_consumed = energy_monitor.stop() if energy_monitor is not None else {}
 
@@ -82,9 +89,10 @@ class ClientFLHC(Client):
             update_vector.append((new_param.data - old_param.data.to(self.device)).flatten())
             updated_params.append(new_param.data.flatten())
 
-        
         # updates_norm
-        client_energy = 0 #energy_monitor.compute_energy_ratio(energy_consumed, self.local_model.parameters())
+        client_energy = (
+            0  # energy_monitor.compute_energy_ratio(energy_consumed, self.local_model.parameters())
+        )
         updates_norm = torch.norm(torch.cat(update_vector))
         for k, e in energy_consumed.items():
             if e < 0:
@@ -93,23 +101,28 @@ class ClientFLHC(Client):
                 e = e / NVML_NVIDIA_UNITS
             else:
                 e = e / RAPL_ENERGY_UNITS
-            client_energy += e 
+            client_energy += e
         energy_ratio = client_energy / (updates_norm.item() + 1e-9)
-
 
         # evaluate the local model
         accuracy, _, _ = self.evaluate()
 
         if save_metrics:
             # Save metrics to CSV
-            with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a") as f:
+            with open(
+                os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a"
+            ) as f:
                 e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
-                f.write(f"{kwargs.get('round', 0)},{loss.item()},{acc_before},{accuracy},{e_pkg0},{energy_ratio}\n")
-        
-        if verbose:
-                print(f"Client: {self.client_id} | Round: {kwargs.get('round', 0)} | Loss: {loss.item()} | Acc: {accuracy} | Engy: {energy_consumed} | E. Ratio: {energy_ratio}")
+                f.write(
+                    f"{kwargs.get('round', 0)},{loss.item()},{acc_before},{accuracy},{e_pkg0},{energy_ratio}\n"
+                )
 
-        #for vect in update_vector:
+        if verbose:
+            print(
+                f"Client: {self.client_id} | Round: {kwargs.get('round', 0)} | Loss: {loss.item()} | Acc: {accuracy} | Engy: {energy_consumed} | E. Ratio: {energy_ratio}"
+            )
+
+        # for vect in update_vector:
         #    print(vect.size())
         update_vector = torch.cat(update_vector).cpu().numpy()
         updated_params = torch.cat(updated_params)

@@ -16,20 +16,18 @@ Algorithm each round:
 import copy
 import os
 import time
-from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from framework.server.serverbase import Server
 from framework.client.client_cgpfl import ClientCGPFL
-from framework.common.utils import average_state_dict, flatten_params, cosine_sim
+from framework.common.utils import average_state_dict, cosine_sim, flatten_params
+from framework.server.serverbase import Server
 
 
 class ServerCGPFL(Server):
-
     def __init__(self, global_model, test_dataloader, args, **kwargs):
         super().__init__()
         self.global_model = global_model
@@ -43,14 +41,14 @@ class ServerCGPFL(Server):
         self.seed = int(args.get("seed", 0))
         self.rng = np.random.default_rng(self.seed)
 
-        self.clients: List[ClientCGPFL] = []
+        self.clients: list[ClientCGPFL] = []
         self.output_dir = args["output_dir"]
         os.makedirs(self.output_dir, exist_ok=True)
 
-        self.cluster_centers: List[Dict[str, torch.Tensor]] = []
-        self.R: List[int] = []
+        self.cluster_centers: list[dict[str, torch.Tensor]] = []
+        self.R: list[int] = []
 
-    def set_clients(self, clients: List[ClientCGPFL]):
+    def set_clients(self, clients: list[ClientCGPFL]):
         self.clients = clients
         for c in self.clients:
             c.output_dir = self.output_dir
@@ -66,7 +64,7 @@ class ServerCGPFL(Server):
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "w") as f:
             f.write("round,mean_acc,std_acc,mean_loss\n")
 
-    def select_clients(self) -> List[ClientCGPFL]:
+    def select_clients(self) -> list[ClientCGPFL]:
         m = max(1, int(self.fraction * len(self.clients)))
         return list(self.rng.choice(self.clients, m, replace=False))
 
@@ -85,15 +83,13 @@ class ServerCGPFL(Server):
         self.R[client.client_id] = int(np.argmax(sims))
 
     @torch.no_grad()
-    def _aggregate(self, client_states: Dict[int, Dict[str, torch.Tensor]]):
+    def _aggregate(self, client_states: dict[int, dict[str, torch.Tensor]]):
         """Per-cluster FedAvg of selected clients' updated state_dicts."""
         for k in range(self.num_clusters):
             members = [cid for cid in client_states if self.R[cid] == k]
             if not members:
                 continue
-            self.cluster_centers[k] = average_state_dict(
-                [client_states[cid] for cid in members]
-            )
+            self.cluster_centers[k] = average_state_dict([client_states[cid] for cid in members])
 
     @torch.no_grad()
     def _eval_and_log(self, round_idx: int, selected_ids: set):
@@ -112,9 +108,7 @@ class ServerCGPFL(Server):
                     f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
 
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
-            f.write(
-                f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n"
-            )
+            f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
     def evaluate(self, model: nn.Module, dataloader: DataLoader, return_loss: bool = False):
         model.eval()
@@ -140,8 +134,8 @@ class ServerCGPFL(Server):
             selected = self.select_clients()
             selected_ids = {c.client_id for c in selected}
 
-            client_states: Dict[int, Dict[str, torch.Tensor]] = {}
-            losses: List[float] = []
+            client_states: dict[int, dict[str, torch.Tensor]] = {}
+            losses: list[float] = []
 
             for c in selected:
                 k_star = self.R[c.client_id]
@@ -172,7 +166,7 @@ class ServerCGPFL(Server):
                     for k in range(self.num_clusters)
                 ]
                 print(
-                    f"[Round {r+1:04d}] "
+                    f"[Round {r + 1:04d}] "
                     f"selected={len(selected_ids)}/{len(self.clients)} "
                     f"mean loss(sel)={mean_loss:.4f} "
                     f"cluster_sizes={counts}"

@@ -1,17 +1,18 @@
-from collections import defaultdict
-from datetime import datetime
 import os
-import torch
-from framework.client.client_flhc import ClientFLHC
-from framework.server.serverbase import Server
-import numpy as np
-from sklearn.cluster import AgglomerativeClustering
 import time
-from framework.common.utils import convert_seconds_to_hhmmss
+from collections import defaultdict
+
+import numpy as np
+import torch
+from sklearn.cluster import AgglomerativeClustering
 from tqdm import tqdm
 
-class ServerFLHC(Server):
+from framework.client.client_flhc import ClientFLHC
+from framework.common.utils import convert_seconds_to_hhmmss
+from framework.server.serverbase import Server
 
+
+class ServerFLHC(Server):
     def __init__(self, global_model, test_dataloader, args, **kwargs):
         super().__init__()
         self.global_model = global_model
@@ -24,8 +25,8 @@ class ServerFLHC(Server):
         self.clustering_metric = args["clustering_metric"]
         self.n_clusters = args.get("n_clusters", None)
         self.clusters = None
-        self.clients : list[ClientFLHC]= []
-        self.selected_clients : list[ClientFLHC] = []
+        self.clients: list[ClientFLHC] = []
+        self.selected_clients: list[ClientFLHC] = []
         self.history = []
         self.specialized_models = dict()
         self.output_dir = args["output_dir"]
@@ -37,7 +38,9 @@ class ServerFLHC(Server):
 
     def pre_learning(self):
         for epoch in range(self.initial_rounds):
-            self.global_model, loss = self.federated_learning(self.global_model, self.clients, round=-(self.initial_rounds - epoch))
+            self.global_model, loss = self.federated_learning(
+                self.global_model, self.clients, round=-(self.initial_rounds - epoch)
+            )
 
     def federated_learning(self, model, clients_subset, **kwargs):
         """
@@ -73,7 +76,7 @@ class ServerFLHC(Server):
         new_state_dict = {}
         for param_name, param in model.named_parameters():
             param_size = param.numel()
-            delta = aggregated_update[offset: offset + param_size].view(param.size())
+            delta = aggregated_update[offset : offset + param_size].view(param.size())
             new_state_dict[param_name] = delta.cpu().clone()
             offset += param_size
         model.load_state_dict(new_state_dict)
@@ -83,15 +86,15 @@ class ServerFLHC(Server):
         if self.n_clusters is not None:
             clustering = AgglomerativeClustering(
                 n_clusters=self.n_clusters,
-                metric='euclidean',
-                linkage='ward',
+                metric="euclidean",
+                linkage="ward",
             )
         else:
             clustering = AgglomerativeClustering(
                 n_clusters=None,
                 distance_threshold=self.distance_threshold,
                 metric=self.clustering_metric,
-                linkage='average',
+                linkage="average",
             )
 
         labels = clustering.fit_predict(updates)
@@ -146,17 +149,25 @@ class ServerFLHC(Server):
         for label, cluster_clients in self.clusters.items():
             cluster_model = type(self.global_model)().to(self.device)
             cluster_model.load_state_dict(self.global_model.state_dict())
-            print(f"Cluster {int(label)+1} training...")
+            print(f"Cluster {int(label) + 1} training...")
             for _round in tqdm(range(self.cluster_rounds), unit="round", colour="green"):
-                cluster_model, mean_loss = self.federated_learning(cluster_model, cluster_clients, round=_round)
+                cluster_model, mean_loss = self.federated_learning(
+                    cluster_model, cluster_clients, round=_round
+                )
                 training_loss_history[int(label)].append(mean_loss)
-                g_acc_top1, g_acc_topk, g_test_loss = self.evaluate(cluster_model, self.test_dataloader, k=1, return_loss=True)
+                g_acc_top1, g_acc_topk, g_test_loss = self.evaluate(
+                    cluster_model, self.test_dataloader, k=1, return_loss=True
+                )
                 global_test_accuracy_history[int(label)].append(g_acc_top1)
                 global_test_loss_history[int(label)].append(g_test_loss)
                 # Evaluate all clients in this cluster so every CSV has one row per round
                 for c in cluster_clients:
-                    acc_top1, _, test_loss = self.evaluate(cluster_model, c.test_loader, k=1, return_loss=True)
-                    with open(os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a") as f:
+                    acc_top1, _, test_loss = self.evaluate(
+                        cluster_model, c.test_loader, k=1, return_loss=True
+                    )
+                    with open(
+                        os.path.join(self.output_dir, f"client_{c.client_id}", "metrics.csv"), "a"
+                    ) as f:
                         f.write(f"{_round},{test_loss},{acc_top1},{acc_top1},0,0\n")
                     round_accs[_round].append(acc_top1)
                     round_losses[_round].append(test_loss)
@@ -176,21 +187,35 @@ class ServerFLHC(Server):
         training_end_time = time.time()
         personalization_end_time = time.time()
         print("Specialized models end training.\n")
-        print(f" ---- STATS ----- : ")
-        print(f"Pre-training time : {convert_seconds_to_hhmmss(pretrain_end_time - pretrain_start_time)}")
-        print(f"Clustering time : {convert_seconds_to_hhmmss(cluster_end_time - cluster_start_time)}")
-        print(f"Personalization time : {convert_seconds_to_hhmmss(personalization_end_time - personalization_start_time)}")
-        print(f"Training time : {convert_seconds_to_hhmmss(training_end_time - training_start_time)}")
-        print(f"---- END STATS ----- ")
-        return specialized_models, training_loss_history, test_loss_history, accuracy_history, global_test_accuracy_history, global_test_loss_history
+        print(" ---- STATS ----- : ")
+        print(
+            f"Pre-training time : {convert_seconds_to_hhmmss(pretrain_end_time - pretrain_start_time)}"
+        )
+        print(
+            f"Clustering time : {convert_seconds_to_hhmmss(cluster_end_time - cluster_start_time)}"
+        )
+        print(
+            f"Personalization time : {convert_seconds_to_hhmmss(personalization_end_time - personalization_start_time)}"
+        )
+        print(
+            f"Training time : {convert_seconds_to_hhmmss(training_end_time - training_start_time)}"
+        )
+        print("---- END STATS ----- ")
+        return (
+            specialized_models,
+            training_loss_history,
+            test_loss_history,
+            accuracy_history,
+            global_test_accuracy_history,
+            global_test_loss_history,
+        )
 
-    def evaluate(self, model, test_dataloader,  k=5, return_loss=False):
+    def evaluate(self, model, test_dataloader, k=5, return_loss=False):
         model.eval()
         correct_top1 = 0
         correct_topk = 0
         total = 0
         total_loss = 0.0
-        last_lost = 0.0
         loss_fn = torch.nn.CrossEntropyLoss()
 
         with torch.no_grad():
@@ -209,7 +234,7 @@ class ServerFLHC(Server):
 
                 total += targets.size(0)
                 total_loss += loss.item() * targets.size(0)
-                last_lost = loss.item()
+                loss.item()
 
         acc_top1 = correct_top1 / total
         acc_topk = correct_topk / total
@@ -234,4 +259,3 @@ class ServerFLHC(Server):
 
     def get_params(self):
         return self.global_model.state_dict()
-

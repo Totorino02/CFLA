@@ -12,8 +12,7 @@ Algorithm:
 import copy
 import os
 import time
-from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Optional
 
 import numpy as np
 import torch
@@ -22,9 +21,9 @@ from sklearn.cluster import AgglomerativeClustering
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from framework.server.serverbase import Server
 from framework.client.client_fedgroup import ClientFedGroup
-from framework.common.utils import average_state_dict, flatten_params
+from framework.common.utils import average_state_dict
+from framework.server.serverbase import Server
 
 
 class ServerFedGroup(Server):
@@ -48,17 +47,17 @@ class ServerFedGroup(Server):
         self.seed = int(args.get("seed", 0))
         self.rng = np.random.default_rng(self.seed)
 
-        self.clients: List[ClientFedGroup] = []
-        self.clusters: Dict[int, List[ClientFedGroup]] = {}
+        self.clients: list[ClientFedGroup] = []
+        self.clusters: dict[int, list[ClientFedGroup]] = {}
         self.output_dir = args["output_dir"]
         os.makedirs(self.output_dir, exist_ok=True)
 
         # cluster assignment: R[cid] = cluster_id
-        self.R: List[int] = []
-        self.cluster_centers: List[Dict[str, torch.Tensor]] = []
+        self.R: list[int] = []
+        self.cluster_centers: list[dict[str, torch.Tensor]] = []
         self.num_clusters: int = 0
 
-    def set_clients(self, clients: List[ClientFedGroup]):
+    def set_clients(self, clients: list[ClientFedGroup]):
         self.clients = clients
         for c in self.clients:
             c.output_dir = self.output_dir
@@ -66,7 +65,7 @@ class ServerFedGroup(Server):
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "w") as f:
             f.write("round,mean_acc,std_acc,mean_loss\n")
 
-    def select_clients(self, pool: Optional[List[ClientFedGroup]] = None) -> List[ClientFedGroup]:
+    def select_clients(self, pool: Optional[list[ClientFedGroup]] = None) -> list[ClientFedGroup]:
         if pool is None:
             pool = self.clients
         m = max(1, int(self.fraction * len(pool)))
@@ -76,7 +75,7 @@ class ServerFedGroup(Server):
     # Phase 1 — Warm-up (standard FedAvg)
     # ------------------------------------------------------------------
 
-    def _fedavg_round(self, model: nn.Module, pool: List[ClientFedGroup], round_idx: int) -> float:
+    def _fedavg_round(self, model: nn.Module, pool: list[ClientFedGroup], round_idx: int) -> float:
         """One FedAvg round on `pool`. Updates `model` in place. Returns mean loss."""
         selected = self.select_clients(pool)
         state_dicts, losses = [], []
@@ -91,7 +90,9 @@ class ServerFedGroup(Server):
     def pre_learning(self):
         """Warm-up: initial_rounds of FedAvg on all clients."""
         for epoch in range(self.initial_rounds):
-            self._fedavg_round(self.global_model, self.clients, round_idx=-(self.initial_rounds - epoch))
+            self._fedavg_round(
+                self.global_model, self.clients, round_idx=-(self.initial_rounds - epoch)
+            )
 
     # ------------------------------------------------------------------
     # Phase 2 — Clustering (ONCE, on full param vectors)
@@ -118,7 +119,7 @@ class ServerFedGroup(Server):
         )
         labels = clustering.fit_predict(param_matrix)
 
-        clusters: Dict[int, List[ClientFedGroup]] = {}
+        clusters: dict[int, list[ClientFedGroup]] = {}
         for idx, label in enumerate(labels):
             clusters.setdefault(int(label), []).append(self.clients[idx])
         return clusters
@@ -144,11 +145,11 @@ class ServerFedGroup(Server):
                     f.write(f"{round_idx},{loss},{acc},{acc},0,0\n")
 
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
-            f.write(
-                f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n"
-            )
+            f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
-    def evaluate(self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False):
+    def evaluate(
+        self, model: nn.Module, dataloader: DataLoader, k: int = 1, return_loss: bool = False
+    ):
         model.eval()
         correct = 0
         total = 0
@@ -214,7 +215,7 @@ class ServerFedGroup(Server):
             self._eval_and_log(_round, selected_ids)
 
             if verbose and ((_round + 1) % self.args.get("log_every", 10) == 0):
-                print(f"[Round {_round+1:04d}]")
+                print(f"[Round {_round + 1:04d}]")
 
         if verbose:
             print(f"FedGroup training done in {time.time() - start:.1f}s")

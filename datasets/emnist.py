@@ -1,6 +1,7 @@
-from torch.utils.data import Dataset
-from torchvision import transforms, datasets
 import numpy as np
+from torch.utils.data import Dataset
+from torchvision import datasets, transforms
+
 
 class EMNISTDataset(Dataset):
     def __init__(self, data, transform=None):
@@ -19,13 +20,11 @@ class EMNISTDataset(Dataset):
 
 
 def load_emnist_data():
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
+    transform = transforms.Compose(
+        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    )
 
-    train_dataset = datasets.MNIST('../data', train=True, download=True, transform=transform)
-    test_dataset = datasets.MNIST('../data', train=False, transform=transform)
+    train_dataset = datasets.MNIST("../data", train=True, download=True, transform=transform)
+    test_dataset = datasets.MNIST("../data", train=False, transform=transform)
 
     return train_dataset, test_dataset
-

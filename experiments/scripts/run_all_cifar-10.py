@@ -1,17 +1,16 @@
-import torch
 import numpy as np
-from torch.utils.data import Subset, DataLoader, random_split, Dataset
+import torch
+from torch.utils.data import DataLoader, Subset, random_split
 from torchvision import datasets, transforms
 
+from experiments.scripts.cgpfl import run_cgpfl_experiment
+from experiments.scripts.fedgroup import run_fedgroup_experiment
+from experiments.scripts.fedper import run_fedper_experiment
+from experiments.scripts.fesem import run_fesem_experiment
 from experiments.scripts.flhc import run_flhc_experiment
 from experiments.scripts.hcfl import run_hcfl_experiment
-from experiments.scripts.lcfed import run_lcfed_experiment
-from experiments.scripts.fedper import run_fedper_experiment
-from experiments.scripts.fedgroup import run_fedgroup_experiment
-from experiments.scripts.fesem import run_fesem_experiment
-from experiments.scripts.cgpfl import run_cgpfl_experiment
 from experiments.scripts.ifca import run_ifca_experiment
-
+from experiments.scripts.lcfed import run_lcfed_experiment
 
 # ---------------------------------------------------------------------------
 # Dataset configs
@@ -20,30 +19,36 @@ from experiments.scripts.ifca import run_ifca_experiment
 _DATASET_CONFIGS = {
     "mnist": {
         "cls": datasets.MNIST,
-        "transform": transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ]),
+        "transform": transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,)),
+            ]
+        ),
         # (class_range_start, class_range_end_inclusive, nb_clients)
         "groups": [(0, 4, 18), (4, 7, 17), (7, 9, 15)],
         "num_classes": 10,
     },
     "cifar10": {
         "cls": datasets.CIFAR10,
-        "transform": transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
-        ]),
+        "transform": transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+            ]
+        ),
         # 3 groups: classes 0-3 / 3-6 / 6-9
         "groups": [(0, 3, 18), (3, 6, 17), (6, 9, 15)],
         "num_classes": 10,
     },
     "cifar100": {
         "cls": datasets.CIFAR100,
-        "transform": transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
-        ]),
+        "transform": transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+            ]
+        ),
         # 5 groups of 20 classes each, 10 clients per group → 50 clients
         "groups": [(0, 19, 10), (20, 39, 10), (40, 59, 10), (60, 79, 10), (80, 99, 10)],
         "num_classes": 100,
@@ -60,7 +65,9 @@ def _split_into_n(ds, n, seed):
     return random_split(ds, sizes, generator=torch.Generator().manual_seed(seed))
 
 
-def build_client_datasets(base_seed: int, run: int, dataset_name: str = "mnist", noise_ratio: float = 0.0):
+def build_client_datasets(
+    base_seed: int, run: int, dataset_name: str = "mnist", noise_ratio: float = 0.0
+):
     """
     Shared structured partitioning used by all algorithms.
     Returns (client_datasets, test_loader, num_classes).
@@ -79,7 +86,7 @@ def build_client_datasets(base_seed: int, run: int, dataset_name: str = "mnist",
     transform = cfg["transform"]
 
     train_ds = cfg["cls"](root="./data", download=True, train=True, transform=transform)
-    test_ds  = cfg["cls"](root="./data", download=True, train=False, transform=transform)
+    test_ds = cfg["cls"](root="./data", download=True, train=False, transform=transform)
 
     # CIFAR targets are a plain list; convert to tensor for masking
     targets = train_ds.targets
@@ -130,12 +137,28 @@ def build_client_datasets(base_seed: int, run: int, dataset_name: str = "mnist",
 if __name__ == "__main__":
     base_seed = 2026
     noise_ratio = 0.0  # 25% cross-cluster contamination — fuzzy boundaries favor HCFL
-    for ds in ("cifar10", ): 
-        run_flhc_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
-        run_hcfl_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
-        run_lcfed_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
-        run_fedper_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
-        run_fedgroup_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
-        run_fesem_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
-        run_cgpfl_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
-        run_ifca_experiment(nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100)
+    for ds in ("cifar10",):
+        run_flhc_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )
+        run_hcfl_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )
+        run_lcfed_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )
+        run_fedper_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )
+        run_fedgroup_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )
+        run_fesem_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )
+        run_cgpfl_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )
+        run_ifca_experiment(
+            nb_runs=1, base_seed=base_seed, dataset=ds, noise_ratio=noise_ratio, nb_rounds=100
+        )

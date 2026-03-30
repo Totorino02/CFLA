@@ -6,9 +6,9 @@ decision head h between rounds. Only the embed state is returned to
 the server for aggregation; the head is never shared.
 """
 
-import os
 import copy
-from typing import Dict, Optional, Tuple
+import os
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -52,10 +52,12 @@ class ClientFedPer:
 
         self.local_model: Optional[nn.Module] = None
         # Personalized head — persists between rounds, None until first training
-        self.local_head_state: Optional[Dict[str, torch.Tensor]] = None
+        self.local_head_state: Optional[dict[str, torch.Tensor]] = None
 
         os.makedirs(os.path.join(self.output_dir, f"client_{self.client_id}"), exist_ok=True)
-        with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w") as f:
+        with open(
+            os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "w"
+        ) as f:
             f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
     def evaluate(self, model: Optional[nn.Module] = None):
@@ -75,7 +77,7 @@ class ClientFedPer:
         return correct / max(1, total), correct, test_loss
 
     @torch.no_grad()
-    def get_embed_state(self) -> Dict[str, torch.Tensor]:
+    def get_embed_state(self) -> dict[str, torch.Tensor]:
         return {k: v.detach().cpu() for k, v in self.local_model.embed.state_dict().items()}
 
     def build_personalized_model(self, global_model: nn.Module) -> nn.Module:
@@ -96,7 +98,7 @@ class ClientFedPer:
         verbose: bool = False,
         save_metrics: bool = True,
         **kwargs,
-    ) -> Tuple[Dict[str, torch.Tensor], float, dict]:
+    ) -> tuple[dict[str, torch.Tensor], float, dict]:
         """
         Returns:
           - embed state_dict (cpu) for global aggregation
@@ -114,6 +116,7 @@ class ClientFedPer:
         energy_monitor = None
         if self.monitor_energy:
             from declearn.main.utils._energy_monitor import EnergyMonitor  # type: ignore
+
             energy_monitor = EnergyMonitor()
             energy_monitor.start()
 
@@ -145,11 +148,14 @@ class ClientFedPer:
                 e = e / (NVML_NVIDIA_UNITS if str(k).startswith("nvidia") else RAPL_ENERGY_UNITS)
                 client_energy += e
             from framework.common.utils import flatten_params
+
             denom = float(flatten_params(self.local_model, device=self.device).norm().item()) + 1e-9
             energy_ratio = client_energy / denom
 
         if save_metrics:
-            with open(os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a") as f:
+            with open(
+                os.path.join(self.output_dir, f"client_{self.client_id}", "metrics.csv"), "a"
+            ) as f:
                 e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
                 f.write(f"{round},{loss_val},{acc_before},{acc_after},{e_pkg0},{energy_ratio}\n")
 

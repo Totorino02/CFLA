@@ -1,7 +1,7 @@
 import torch
 from torch.nn import Module
+
 from framework.client.clientbase import Client
-import numpy as np
 
 
 class ClientMADMTOP(Client):
@@ -10,7 +10,7 @@ class ClientMADMTOP(Client):
         self.local_model: Module = None
         self.dataset = dataset
         self.device = args["device"]
-        self.criterion = torch.nn.CrossEntropyLoss(reduction='mean')  # args["criterion"]
+        self.criterion = torch.nn.CrossEntropyLoss(reduction="mean")  # args["criterion"]
         self.optimizer = args["optimizer"]
         self.local_epochs = args["local_epochs"]
         self.learning_rate = args["learning_rate"]
@@ -18,18 +18,20 @@ class ClientMADMTOP(Client):
 
     def train(self, global_model=None, verbose=False, **kwargs):
         """
-                This method trains the local model on the local dataset
-                and returns the updated vector (the difference between the global model params and the local trained model params)
-                 and the last training loss.
-                :param global_model: The global model gets from the server
-                :param verbose: If True, prints the training progress
-                :return: Update_vector, loss
-                """
+        This method trains the local model on the local dataset
+        and returns the updated vector (the difference between the global model params and the local trained model params)
+         and the last training loss.
+        :param global_model: The global model gets from the server
+        :param verbose: If True, prints the training progress
+        :return: Update_vector, loss
+        """
         # copy of the global model to a local model
         self.local_model = type(global_model)().to(self.device)
         self.local_model.load_state_dict(global_model.state_dict())
         self.local_model.train()
-        self.optimizer = torch.optim.SGD(params=self.local_model.parameters(), lr=self.learning_rate)
+        self.optimizer = torch.optim.SGD(
+            params=self.local_model.parameters(), lr=self.learning_rate
+        )
 
         # training on local data
         loss = torch.tensor(0.0)
@@ -45,7 +47,9 @@ class ClientMADMTOP(Client):
 
             if verbose:
                 if epoch % 10 == 0:
-                    print(f"Client {self.client_id} | Epoch {epoch + 1}/{self.local_epochs} | Loss: {loss.item()}")
+                    print(
+                        f"Client {self.client_id} | Epoch {epoch + 1}/{self.local_epochs} | Loss: {loss.item()}"
+                    )
 
         # update vector of local model parameters
         delta_params = []
