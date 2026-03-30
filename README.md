@@ -34,16 +34,18 @@ CFLA provides a unified framework to implement, run, and compare CFL algorithms 
 
 HCFL automatically discovers the number of clusters $K^*$ via agglomerative hierarchical clustering on client embedding update vectors, then trains cluster-specific models using a FedProx-style objective toward the cluster center:
 
-```
-L_i(ω) = L_sup(ω; D_i) + (μ/2) ‖ω - Ω_k‖²
-```
+$$
+\mathcal{L}_i(\omega) = \mathcal{L}_{\sup}(\omega; D_i) + \frac{\mu}{2} \|\omega - \Omega_k\|^2
+$$
 
 Inter-cluster knowledge sharing is handled **server-side** via a scheduled blending of cluster models toward the global embedding Φ:
 
-```
-Ω_k(t) ← (1 - λ(t)) · Avg({ω_i : i ∈ S_t ∩ C_k}) + λ(t) · Φ(t)
-λ(t)    = λ₀ / (1 + α·t)^p
-```
+$$
+\Omega_k^{(t)} \leftarrow (1 - \lambda^{(t)}) \cdot \text{Avg}\left(\{\omega_i : i \in S_t \cap C_k\}\right) + \lambda^{(t)} \cdot \Phi^{(t)}
+$$
+$$
+\lambda^{(t)} = \frac{\lambda_0}{(1 + \alpha \cdot t)^p}
+$$
 
 This decouples two roles: **μ** controls client-to-cluster fidelity (local), **λ(t)** controls inter-cluster sharing (server-side, decaying).
 
