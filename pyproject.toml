@@ -1,10 +1,10 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "CFLA"
-version = "1.0.0"
+version = "1.0.1"
 description = "CFLA - a framework for clustered federated learning algorithms"
 readme = "README.md"
 requires-python = ">=3.9"

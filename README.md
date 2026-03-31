@@ -2,8 +2,6 @@
 
 A Python library implementing and benchmarking **Clustered Federated Learning (CFL)** algorithms. It includes reproductions of state-of-the-art methods from the literature alongside **HCFL**, an original algorithm that automatically discovers the number of clusters without requiring it as a hyperparameter.
 
-> **Paper:** *HCFL: Hierarchical Clustered Federated Learning with Automatic Cluster Discovery* — Antoine Hounsi.
-
 ---
 
 ## Overview
@@ -35,7 +33,7 @@ CFLA provides a unified framework to implement, run, and compare CFL algorithms 
 HCFL automatically discovers the number of clusters $K^*$ via agglomerative hierarchical clustering on client embedding update vectors, then trains cluster-specific models using a FedProx-style objective toward the cluster center:
 
 $$
-\mathcal{L}_i(\omega) = \mathcal{L}_{\sup}(\omega; D_i) + \frac{\mu}{2} \|\omega - \Omega_k\|^2
+\mathcal{L}_i(\omega) = \mathcal{L}(\omega; D_i) + \frac{\mu}{2} \|\omega - \Omega_k\|^2
 $$
 
 Inter-cluster knowledge sharing is handled **server-side** via a scheduled blending of cluster models toward the global embedding Φ:
@@ -132,6 +130,12 @@ git clone https://github.com/Totorino02/CFLA.git
 cd CFLA
 pip install -e .
 pip install -r requirements.dev.txt
+```
+
+or
+
+```bash
+pip install cfla
 ```
 
 ### Energy monitoring (Linux only)
