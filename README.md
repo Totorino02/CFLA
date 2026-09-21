@@ -48,6 +48,7 @@ $$
 This decouples two roles: **μ** controls client-to-cluster fidelity (local), **λ(t)** controls inter-cluster sharing (server-side, decaying).
 
 **Training procedure:**
+
 1. **Pre-training** (`R_pre` rounds) — FedAvg warm-up to build a meaningful global representation
 2. **Cluster discovery** — each client computes δᵢ = φᵢ - φ⁽⁰⁾ after one local step; agglomerative clustering on {δᵢ} determines K* automatically
 3. **CFL phase** (`T` rounds) — per-cluster training with server-side embedding blending; clusters specialize progressively as λ(t) → 0
@@ -76,7 +77,7 @@ HCFL is the best no-K method on all three benchmarks, and achieves the best over
 
 ## Project Structure
 
-```
+```txt
 CFLA/
 ├── framework/
 │   ├── client/
@@ -176,6 +177,7 @@ python -m experiments.scripts.plot_results --results_dir ./RESULTS/my_run --outp
 ```
 
 Produces:
+
 - `accuracy_curves.png` — mean accuracy per round with ±1σ band
 - `loss_curves.png` — mean loss per round
 - `accuracy_boxplot.png` — per-client accuracy distribution at the final round
@@ -199,7 +201,7 @@ Produces:
 
 Each experiment writes results to a local `RESULTS/` directory (not tracked in git):
 
-```
+```txt
 result_{algo}_{dataset}_{timestamp}/
 ├── server_metrics.csv           # round, mean_acc, std_acc, mean_loss
 └── client_{id}/
