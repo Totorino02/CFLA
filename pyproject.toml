@@ -4,21 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "CFLA"
-version = "1.0.1"
+version = "1.0.2"
 description = "CFLA - a framework for clustered federated learning algorithms"
 readme = "README.md"
 requires-python = ">=3.9"
+
 authors = [
     { name = "HOUNSI Antoine", email = "antoinehounsi3@gmail.com" }
 ]
-license = { text = "MIT" }
+
+license = "MIT"
+
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+
 dependencies = [
-    "torch",
+    "torch==2.0.1",
+    "torchvision==0.15.2",
     "numpy",
     "tqdm",
     "declearn",
@@ -28,13 +32,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-energy = []  # placeholder pour signaler la dépendance optionnelle
+energy = []
 
 [project.urls]
 Homepage = "https://github.com/Totorino02/CFLA"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["cfla*"]
 
 [tool.ruff]
 target-version = "py39"
@@ -45,7 +50,7 @@ select = ["E", "W", "F", "I", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["framework", "datasets", "experiments"]
+known-first-party = ["cfla"]
 
 [tool.ruff.format]
 quote-style = "double"

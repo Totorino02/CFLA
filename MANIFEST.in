@@ -15,6 +15,6 @@ exclude *.log
 exclude *.egg-info
 exclude result_*
 exclude PLOTS*
-exclude experiments/scripts/main_*.py
-exclude experiments/scripts/ablation_*.py
-exclude experiments/scripts/plot_sharing*.py
+exclude **/experiments/scripts/main_*.py
+exclude **/experiments/scripts/ablation_*.py
+exclude **/experiments/scripts/plot_sharing*.py
