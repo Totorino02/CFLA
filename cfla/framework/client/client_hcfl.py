@@ -95,18 +95,21 @@ class ClientHCFL(Client):
         **kwargs,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor, float, dict]:
         """
-        This method trains the local model on the local dataset.
-        if phi_global and omega_cluster are provided, it performs the LCFed training with the additional regularization terms.
-        if not, it performs standard local training (can be used for pre-learning rounds before clustering).
+        Local training on the client's data.
+        - omega_cluster is None: standard local training (warm-up phase).
+        - otherwise: HCFL training initialized from Ω_k with the proximal
+          term μ/2 ||ω - Ω_k||² (Eq. 1, Algorithm 1 lines 26-33).
         Returns:
             - full local model state_dict (for server aggregation)
-            - low-rank vector for clustering (z = M @ flatten(local_model))
             - last training loss (for logging)
             - energy consumed (optional, for logging)
         """
-        # init local model from global model parameters (ω init)
+        # Init local model:
+        # - clustered phase: ω ← Ω_k 
+        # - warm-up phase (omega_cluster is None): ω ← global model
         self.local_model = type(global_model)().to(self.device)
-        self.local_model.load_state_dict(global_model.state_dict(), strict=True)
+        init_state = omega_cluster if omega_cluster is not None else global_model.state_dict()
+        self.local_model.load_state_dict(init_state, strict=True)
         self.local_model.train()
 
         optimizer = torch.optim.SGD(self.local_model.parameters(), lr=self.learning_rate)
@@ -154,6 +157,7 @@ class ClientHCFL(Client):
         omega_ref = type(global_model)().to(self.device)
         omega_ref.load_state_dict(omega_cluster, strict=True)
         omega_ref.eval()
+        omega_ref.requires_grad_(False)
 
         loss_val = 0.0
 
