@@ -3,14 +3,14 @@ import torch
 from torch.utils.data import DataLoader, Subset, random_split
 from torchvision import datasets, transforms
 
-from cfla.experiments.cgpfl import run_cgpfl_experiment
-from cfla.experiments.fedgroup import run_fedgroup_experiment
-from cfla.experiments.fedper import run_fedper_experiment
-from cfla.experiments.fesem import run_fesem_experiment
-from cfla.experiments.flhc import run_flhc_experiment
-from cfla.experiments.hcfl import run_hcfl_experiment
-from cfla.experiments.ifca import run_ifca_experiment
-from cfla.experiments.lcfed import run_lcfed_experiment
+from cfla.experiments.scripts.cgpfl import run_cgpfl_experiment
+from cfla.experiments.scripts.fedgroup import run_fedgroup_experiment
+from cfla.experiments.scripts.fedper import run_fedper_experiment
+from cfla.experiments.scripts.fesem import run_fesem_experiment
+from cfla.experiments.scripts.flhc import run_flhc_experiment
+from cfla.experiments.scripts.hcfl import run_hcfl_experiment
+from cfla.experiments.scripts.ifca import run_ifca_experiment
+from cfla.experiments.scripts.lcfed import run_lcfed_experiment
 
 # ---------------------------------------------------------------------------
 # Dataset configs
