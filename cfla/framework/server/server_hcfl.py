@@ -1,7 +1,8 @@
+from collections import defaultdict
 import copy
 import os
 import time
-from typing import Optional
+from typing import Optional, Dict
 
 import numpy as np
 import torch
@@ -41,6 +42,7 @@ class ServerHCFL(Server):
         self.args = args
         self.seed = args.get("seed", 0)
         self.rng = np.random.default_rng(self.seed)
+        self.last_clusters_acc : dict[int, float] = defaultdict(float)
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
@@ -166,6 +168,8 @@ class ServerHCFL(Server):
                 mean_acc_k = float(np.mean(cluster_accs[k])) if cluster_accs[k] else 0.0
                 dist_k = self._omega_phi_dist(k)
                 f.write(f"{round_idx},{k},{n_k},{mean_acc_k:.6f},{dist_k:.6f},{lam:.6f}\n")
+
+        return {k : np.mean(accs) for k, accs in cluster_accs.items()}
 
     def select_clients(self, clients_subset: Optional[list[ClientHCFL]] = None) -> list[ClientHCFL]:
         """Global selection — used during pre-learning (no clusters yet)."""
@@ -336,7 +340,7 @@ class ServerHCFL(Server):
             self.aggregate(client_states, round=r)
 
             # Evaluate all clients, log per-client CSV + server_metrics.csv
-            self._eval_and_log(r, selected_ids={c.client_id for c in selected})
+            self.last_clusters_acc = self._eval_and_log(r, selected_ids={c.client_id for c in selected})
 
             # Optional server-side eval (global_model as reference)
             if verbose and ((r + 1) % self.args.get("log_every", 10) == 0):
@@ -361,7 +365,7 @@ class ServerHCFL(Server):
             dur = time.time() - start
             print(f"$HCFL training done in {dur:.1f}s")
 
-        return self.cluster_centers, self.global_phi, self.R
+        return self.cluster_centers, self.global_phi, self.R, self.last_clusters_acc
 
     def get_params(self):
         return super().get_params()
