@@ -1,4 +1,3 @@
-
 import numpy as np
 import torch
 
@@ -161,7 +160,6 @@ class ServerMADMTOP(Server):
         M = len(clients)
         s = np.argsort(-alpha.flatten())  # tri des indices par similarité décroissante
         C = [{i} for i in range(M)]
-
 
         for idx in s:
             i1, i2 = divmod(idx, M)

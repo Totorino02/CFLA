@@ -206,9 +206,7 @@ class ServerLCFed:
         with open(os.path.join(self.output_dir, "server_metrics.csv"), "a") as f:
             f.write(f"{round_idx},{np.mean(accs):.6f},{np.std(accs):.6f},{np.mean(losses):.6f}\n")
 
-    def select_clients(
-        self, clients_subset: list[ClientLCFed] | None = None
-    ) -> list[ClientLCFed]:
+    def select_clients(self, clients_subset: list[ClientLCFed] | None = None) -> list[ClientLCFed]:
         if clients_subset is None:
             clients_subset = self.clients
         m = max(1, int(self.fraction * len(clients_subset)))

@@ -105,7 +105,7 @@ class ClientHCFL(Client):
             - energy consumed (optional, for logging)
         """
         # Init local model:
-        # - clustered phase: ω ← Ω_k 
+        # - clustered phase: ω ← Ω_k
         # - warm-up phase (omega_cluster is None): ω ← global model
         self.local_model = type(global_model)().to(self.device)
         init_state = omega_cluster if omega_cluster is not None else global_model.state_dict()
