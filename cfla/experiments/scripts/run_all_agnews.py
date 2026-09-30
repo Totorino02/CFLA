@@ -13,7 +13,9 @@ import os
 import numpy as np
 import torch
 
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+DEVICE = (
+    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+)
 
 from cfla.datasets.ag_news import build_client_datasets_agnews
 from cfla.framework.models.nlp_models import SplitTextCNNAGNews, TextCNNAGNews

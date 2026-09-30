@@ -1,6 +1,9 @@
 import torch
 
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+DEVICE = (
+    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+)
+
 import datetime
 import os
 
@@ -18,7 +21,15 @@ def _get_model(dataset: str, num_classes: int):
 
 
 def run_lcfed_experiment(
-    nb_runs=1, base_seed=42, dataset="mnist", noise_ratio=0.0, nb_rounds=50, mu=1.0, lam=2.0
+    nb_runs=1,
+    base_seed=42,
+    dataset="mnist",
+    noise_ratio=0.0,
+    nb_rounds=50,
+    local_epochs=3,
+    output_dir="./RESULTS",
+    mu=1.0,
+    lam=2.0,
 ):
     from cfla.experiments.scripts.run_all_mnist import build_client_datasets
 
@@ -32,11 +43,11 @@ def run_lcfed_experiment(
         )
 
         stamp = datetime.datetime.now().strftime("%y-%m-%d_%H-%M")
-        output_dir = os.path.join("./RESULTS", f"result_lcfed_{dataset}_{stamp}")
-        os.makedirs(output_dir, exist_ok=True)
+        result_dir = os.path.join(output_dir, f"result_lcfed_{dataset}_{stamp}")
+        os.makedirs(result_dir, exist_ok=True)
 
         client_args = {
-            "local_epochs": 3,
+            "local_epochs": local_epochs,
             "local_steps": 0,
             "device": DEVICE,
             "optimizer": torch.optim.SGD,
@@ -47,12 +58,12 @@ def run_lcfed_experiment(
             "mu": mu,
             "lambda": lam,
             "monitor_energy": False,
-            "output_dir": output_dir,
+            "output_dir": result_dir,
             "seed": seed,
         }
 
         clients = [
-            ClientLCFed(client_id=cid, dataset=ds, output_dir=output_dir, args=client_args)
+            ClientLCFed(client_id=cid, dataset=ds, output_dir=result_dir, args=client_args)
             for cid, ds in client_datasets.items()
             if len(ds) > 64
         ]
@@ -64,7 +75,7 @@ def run_lcfed_experiment(
             "num_clusters": 3,
             "low_rank_dim": 50,
             "pca_sample_clients": 20,
-            "output_dir": output_dir,
+            "output_dir": result_dir,
             "seed": seed,
             "log_every": 10,
         }

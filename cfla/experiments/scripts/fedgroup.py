@@ -1,6 +1,9 @@
 import torch
 
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+DEVICE = (
+    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+)
+
 import datetime
 import os
 
@@ -18,7 +21,13 @@ def _get_model(dataset: str, num_classes: int):
 
 
 def run_fedgroup_experiment(
-    nb_runs=1, base_seed=42, dataset="mnist", noise_ratio=0.0, nb_rounds=50
+    nb_runs=1,
+    base_seed=42,
+    dataset="mnist",
+    noise_ratio=0.0,
+    nb_rounds=50,
+    local_epochs=3,
+    output_dir="./RESULTS",
 ):
     from cfla.experiments.scripts.run_all_mnist import build_client_datasets
 
@@ -32,22 +41,22 @@ def run_fedgroup_experiment(
         )
 
         stamp = datetime.datetime.now().strftime("%y-%m-%d_%H-%M")
-        output_dir = os.path.join("./RESULTS", f"result_fedgroup_{dataset}_{stamp}")
-        os.makedirs(output_dir, exist_ok=True)
+        result_dir = os.path.join(output_dir, f"result_fedgroup_{dataset}_{stamp}")
+        os.makedirs(result_dir, exist_ok=True)
 
         client_args = {
-            "local_epochs": 3,
+            "local_epochs": local_epochs,
             "device": DEVICE,
             "learning_rate": 0.01,
             "batch_size": 32,
             "train_fraction": 0.2,
             "monitor_energy": False,
-            "output_dir": output_dir,
+            "output_dir": result_dir,
             "seed": seed,
         }
 
         clients = [
-            ClientFedGroup(client_id=cid, dataset=ds, output_dir=output_dir, args=client_args)
+            ClientFedGroup(client_id=cid, dataset=ds, output_dir=result_dir, args=client_args)
             for cid, ds in client_datasets.items()
             if len(ds) > 64
         ]
@@ -58,7 +67,7 @@ def run_fedgroup_experiment(
             "initial_rounds": 3,
             "cluster_rounds": nb_rounds,
             "distance_threshold": 0.5,
-            "output_dir": output_dir,
+            "output_dir": result_dir,
             "seed": seed,
             "log_every": 10,
         }

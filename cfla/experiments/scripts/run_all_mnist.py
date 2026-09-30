@@ -170,15 +170,15 @@ def build_client_datasets_rotated_cifar10(base_seed: int, run: int):
             transform = transforms.Compose([transforms.ToTensor(), normalize])
         else:
             # degrees=(angle, angle) → deterministic exact rotation
-            transform = transforms.Compose([
-                transforms.RandomRotation(degrees=(angle, angle)),
-                transforms.ToTensor(),
-                normalize,
-            ])
+            transform = transforms.Compose(
+                [
+                    transforms.RandomRotation(degrees=(angle, angle)),
+                    transforms.ToTensor(),
+                    normalize,
+                ]
+            )
 
-        train_ds = datasets.CIFAR10(
-            root="./data", download=True, train=True, transform=transform
-        )
+        train_ds = datasets.CIFAR10(root="./data", download=True, train=True, transform=transform)
 
         all_indices = list(range(len(train_ds)))
         rng.shuffle(all_indices)

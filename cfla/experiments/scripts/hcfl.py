@@ -1,6 +1,9 @@
 import torch
 
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+DEVICE = (
+    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+)
+
 import datetime
 import os
 
@@ -23,6 +26,8 @@ def run_hcfl_experiment(
     dataset="mnist",
     noise_ratio=0.0,
     nb_rounds=50,
+    local_epochs=3,
+    output_dir="./RESULTS",
     lambda_0=1.0,
     lambda_alpha=0.1,
     lambda_p=1.0,
@@ -39,11 +44,11 @@ def run_hcfl_experiment(
         )
 
         stamp = datetime.datetime.now().strftime("%y-%m-%d_%H-%M")
-        output_dir = os.path.join("./RESULTS", f"result_hcfl_{dataset}_{stamp}")
-        os.makedirs(output_dir, exist_ok=True)
+        result_dir = os.path.join(output_dir, f"result_hcfl_{dataset}_{stamp}")
+        os.makedirs(result_dir, exist_ok=True)
 
         client_args = {
-            "local_epochs": 3,
+            "local_epochs": local_epochs,
             "local_steps": 0,
             "device": DEVICE,
             "optimizer": torch.optim.SGD,
@@ -53,12 +58,12 @@ def run_hcfl_experiment(
             "train_fraction": 0.2,
             "mu": 1.0,
             "monitor_energy": False,
-            "output_dir": output_dir,
+            "output_dir": result_dir,
             "seed": seed,
         }
 
         clients = [
-            ClientHCFL(client_id=cid, dataset=ds, output_dir=output_dir, args=client_args)
+            ClientHCFL(client_id=cid, dataset=ds, output_dir=result_dir, args=client_args)
             for cid, ds in client_datasets.items()
             if len(ds) > 64
         ]
@@ -66,14 +71,14 @@ def run_hcfl_experiment(
         server_args = {
             "fraction": 0.2,
             "device": DEVICE,
-            "initial_rounds": 3,
+            "initial_rounds": 5,
             "cluster_rounds": nb_rounds,
             "distance_threshold": 0.5,
             "clustering_metric": "cosine",
             "lambda_0": lambda_0,
             "lambda_alpha": lambda_alpha,
             "lambda_p": lambda_p,
-            "output_dir": output_dir,
+            "output_dir": result_dir,
             "seed": seed,
             "log_every": 10,
         }

@@ -12,7 +12,9 @@ import os
 import numpy as np
 import torch
 
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+DEVICE = (
+    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+)
 
 from cfla.datasets.femnist import build_client_datasets_femnist
 from cfla.framework.models.computer_vision import LeNet5FEMNIST, SplitLeNet5FEMNIST
