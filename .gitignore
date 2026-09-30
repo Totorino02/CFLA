@@ -1,5 +1,6 @@
 .idea/
 data/
+dist/
 results/
 **/__pycache__/
 test*
