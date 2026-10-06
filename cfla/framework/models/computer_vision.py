@@ -149,6 +149,7 @@ class SplitLeNet5Cifar(nn.Module):
     def forward(self, x):
         return self.head(self.embed(x))
 
+
 class LeNet5FEMNIST(nn.Module):
     """LeNet5 for FEMNIST (28×28 grayscale, 62 classes by default)."""
 

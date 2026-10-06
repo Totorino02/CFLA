@@ -10,13 +10,15 @@ import os
 import numpy as np
 
 from cfla.framework.client.client_hcfl import ClientHCFL
-from cfla.framework.models.computer_vision import SplitCNNCifar, SplitLeNet5V1
+from cfla.framework.models.computer_vision import SplitCNNCifar, SplitLeNet5V1, SplitLeNet5Cifar
 from cfla.framework.server.server_hcfl import ServerHCFL
 
 
 def _get_model(dataset: str, num_classes: int):
     if dataset == "mnist":
-        return SplitLeNet5V1()
+        return (SplitLeNet5V1(),)
+    if dataset == "cifar10" or dataset == "cifar100":
+        return SplitLeNet5Cifar(num_classes=num_classes)
     return SplitCNNCifar(num_classes=num_classes)
 
 
@@ -27,6 +29,7 @@ def run_hcfl_experiment(
     noise_ratio=0.0,
     nb_rounds=50,
     local_epochs=3,
+    save_test_dataset=False,
     output_dir="./RESULTS",
     lambda_0=1.0,
     lambda_alpha=0.1,
@@ -60,6 +63,7 @@ def run_hcfl_experiment(
             "monitor_energy": False,
             "output_dir": result_dir,
             "seed": seed,
+            "save_test_dataset": save_test_dataset,
         }
 
         clients = [

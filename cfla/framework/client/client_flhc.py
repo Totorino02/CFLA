@@ -40,6 +40,13 @@ class ClientFLHC(Client):
         ) as f:
             f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
+        # save test dataset for later evaluation (optional)
+        if args.get("save_test_dataset", False):
+            torch.save(
+                test_dataset,
+                os.path.join(self.output_dir, f"client_{self.client_id}", "test_dataset.pt"),
+            )
+
     def train(self, global_model=None, verbose=False, save_metrics=True, **kwargs):
         """
         This method trains the local model on the local dataset
@@ -116,6 +123,18 @@ class ClientFLHC(Client):
                 f.write(
                     f"{kwargs.get('round', 0)},{loss.item()},{acc_before},{accuracy},{e_pkg0},{energy_ratio}\n"
                 )
+
+            # Save model checkpoint if round % 25 == 0
+            if kwargs.get("round", 0) % 25 == 0:
+                os.makedirs(
+                    os.path.join(self.output_dir, f"client_{self.client_id}"), exist_ok=True
+                )
+                model_path = os.path.join(
+                    self.output_dir,
+                    f"client_{self.client_id}",
+                    f"model_round_{kwargs.get('round', 0)}.pt",
+                )
+                torch.save(self.local_model.state_dict(), model_path)
 
         if verbose:
             print(

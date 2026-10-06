@@ -54,6 +54,13 @@ class ClientFeSEM:
         ) as f:
             f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
+        # save test dataset for later evaluation (optional)
+        if args.get("save_test_dataset", False):
+            torch.save(
+                test_dataset,
+                os.path.join(self.output_dir, f"client_{self.client_id}", "test_dataset.pt"),
+            )
+
     def evaluate(self, model: Optional[nn.Module] = None):
         if model is None:
             model = self.local_model
@@ -144,6 +151,15 @@ class ClientFeSEM:
                 e_pkg0 = energy_consumed.get("package_0", 0) if energy_consumed else 0
                 f.write(f"{round},{loss_val},{acc_before},{acc_after},{e_pkg0},{energy_ratio}\n")
 
+            # save model checkpoint if round%25==0
+            if round % 25 == 0:
+                os.makedirs(
+                    os.path.join(self.output_dir, f"client_{self.client_id}"), exist_ok=True
+                )
+                model_path = os.path.join(
+                    self.output_dir, f"client_{self.client_id}", f"model_round_{round}.pt"
+                )
+                torch.save(self.local_model.state_dict(), model_path)
         if verbose:
             print(
                 f"Client {self.client_id} | Round {round} | "

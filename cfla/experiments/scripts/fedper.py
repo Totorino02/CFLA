@@ -10,13 +10,15 @@ import os
 import numpy as np
 
 from cfla.framework.client.client_fedper import ClientFedPer
-from cfla.framework.models.computer_vision import SplitCNNCifar, SplitLeNet5V1
+from cfla.framework.models.computer_vision import SplitCNNCifar, SplitLeNet5V1, SplitLeNet5Cifar
 from cfla.framework.server.server_fedper import ServerFedPer
 
 
 def _get_model(dataset: str, num_classes: int):
     if dataset == "mnist":
         return SplitLeNet5V1()
+    if dataset == "cifar10" or dataset == "cifar100":
+        return SplitLeNet5Cifar(num_classes=num_classes)
     return SplitCNNCifar(num_classes=num_classes)
 
 
@@ -27,6 +29,7 @@ def run_fedper_experiment(
     noise_ratio=0.0,
     nb_rounds=50,
     local_epochs=3,
+    save_test_dataset=False,
     output_dir="./RESULTS",
 ):
     from cfla.experiments.scripts.run_all_mnist import build_client_datasets
@@ -53,6 +56,7 @@ def run_fedper_experiment(
             "monitor_energy": False,
             "output_dir": result_dir,
             "seed": seed,
+            "save_test_dataset": save_test_dataset,
         }
 
         clients = [

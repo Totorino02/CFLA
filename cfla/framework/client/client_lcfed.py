@@ -105,6 +105,13 @@ class ClientLCFed:
         ) as f:
             f.write("round,loss,accuracy_before,accuracy_after,energy_consumed,energy_ratio\n")
 
+        # save test dataset for later evaluation (optional)
+        if args.get("save_test_dataset", False):
+            torch.save(
+                test_dataset,
+                os.path.join(self.output_dir, f"client_{self.client_id}", "test_dataset.pt"),
+            )
+
     def set_M(self, M: torch.Tensor):
         self.M = M.detach().to(self.device)
 
@@ -267,6 +274,18 @@ class ClientLCFed:
                 f.write(
                     f"{kwargs.get('round', 0)},{loss_val},{acc_before},{acc_after},{e_pkg0},{energy_ratio}\n"
                 )
+
+            # save model checkpoint if round%25==0
+            if kwargs.get("round", 0) % 25 == 0:
+                os.makedirs(
+                    os.path.join(self.output_dir, f"client_{self.client_id}"), exist_ok=True
+                )
+                model_path = os.path.join(
+                    self.output_dir,
+                    f"client_{self.client_id}",
+                    f"model_round_{kwargs.get('round', 0)}.pt",
+                )
+                torch.save(self.local_model.state_dict(), model_path)
 
         if verbose:
             print(

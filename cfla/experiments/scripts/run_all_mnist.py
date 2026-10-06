@@ -38,7 +38,7 @@ _DATASET_CONFIGS = {
             ]
         ),
         # 3 groups: classes 0-3 / 3-6 / 6-9
-        "groups": [(0, 3, 18), (3, 6, 17), (6, 9, 15)],
+        "groups": [(0, 3, 5), (3, 6, 8), (6, 9, 7)],
         "num_classes": 10,
     },
     "cifar100": {

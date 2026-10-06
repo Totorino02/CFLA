@@ -135,23 +135,64 @@ class GradRecorder:
                 indent=1,
             )
 
-        self._csv("grad_metrics.csv", [
-            "phase", "round", "cluster", "n_selected", "lambda",
-            "norm_local", "norm_local_embed", "norm_local_head", "norm_share",
-            "cos_share_local", "cos_local_mean_all", "cos_local_mean_embed", "cos_local_mean_head",
-            "shared_norm", "specific_norm",
-            "intra_client_cos", "client_cos_to_cluster", "cfl_ratio",
-            "mean_client_norm", "max_client_norm",
-            "mean_g_sup", "mean_g_prox", "mean_cos_sup_prox",
-        ], new=True)
-        self._csv("grad_transfer.csv", [
-            "round", "source", "target", "lambda", "weight",
-            "norm_contrib", "norm_know", "norm_align", "norm_damp",
-            "cos_contrib_same", "cos_know_same", "cos_know_next",
-        ], new=True)
-        self._csv("grad_layers.csv", [
-            "phase", "round", "layer", "mean_inter_cluster_cos", "mean_norm",
-        ], new=True)
+        self._csv(
+            "grad_metrics.csv",
+            [
+                "phase",
+                "round",
+                "cluster",
+                "n_selected",
+                "lambda",
+                "norm_local",
+                "norm_local_embed",
+                "norm_local_head",
+                "norm_share",
+                "cos_share_local",
+                "cos_local_mean_all",
+                "cos_local_mean_embed",
+                "cos_local_mean_head",
+                "shared_norm",
+                "specific_norm",
+                "intra_client_cos",
+                "client_cos_to_cluster",
+                "cfl_ratio",
+                "mean_client_norm",
+                "max_client_norm",
+                "mean_g_sup",
+                "mean_g_prox",
+                "mean_cos_sup_prox",
+            ],
+            new=True,
+        )
+        self._csv(
+            "grad_transfer.csv",
+            [
+                "round",
+                "source",
+                "target",
+                "lambda",
+                "weight",
+                "norm_contrib",
+                "norm_know",
+                "norm_align",
+                "norm_damp",
+                "cos_contrib_same",
+                "cos_know_same",
+                "cos_know_next",
+            ],
+            new=True,
+        )
+        self._csv(
+            "grad_layers.csv",
+            [
+                "phase",
+                "round",
+                "layer",
+                "mean_inter_cluster_cos",
+                "mean_norm",
+            ],
+            new=True,
+        )
 
     # ------------------------------------------------------------------ utils
     def _csv(self, name, row, new=False):
@@ -168,7 +209,9 @@ class GradRecorder:
         V = np.atleast_2d(V)
         out = np.zeros((V.shape[0], self.sketch_dim), dtype=np.float32)
         for r in range(V.shape[0]):
-            out[r] = np.bincount(self.sk_idx, weights=V[r] * self.sk_sign, minlength=self.sketch_dim)
+            out[r] = np.bincount(
+                self.sk_idx, weights=V[r] * self.sk_sign, minlength=self.sketch_dim
+            )
         return out
 
     def _layer_stats(self, G):
@@ -201,20 +244,44 @@ class GradRecorder:
         mean_upd = D.mean(0)
         cfl = float(np.linalg.norm(mean_upd) / (norms.max() + EPS))
         st = self._stats_arrays(ids, client_stats)
-        self._csv("grad_metrics.csv", [
-            phase, round_idx, -1, len(ids), 0.0,
-            np.linalg.norm(mean_upd), np.linalg.norm(mean_upd[self.embed_mask]),
-            np.linalg.norm(mean_upd[~self.embed_mask]), 0.0,
-            "", "", "", "", "", "",
-            _mean_offdiag(C), "", cfl, norms.mean(), norms.max(),
-            _nanmean(st["client_g_sup_norm"]), "", "",
-        ])
+        self._csv(
+            "grad_metrics.csv",
+            [
+                phase,
+                round_idx,
+                -1,
+                len(ids),
+                0.0,
+                np.linalg.norm(mean_upd),
+                np.linalg.norm(mean_upd[self.embed_mask]),
+                np.linalg.norm(mean_upd[~self.embed_mask]),
+                0.0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                _mean_offdiag(C),
+                "",
+                cfl,
+                norms.mean(),
+                norms.max(),
+                _nanmean(st["client_g_sup_norm"]),
+                "",
+                "",
+            ],
+        )
         np.savez_compressed(
             os.path.join(self.dir, f"{phase}_{round_idx:04d}.npz"),
-            phase=phase, round=round_idx, client_ids=np.array(ids),
-            client_norms=norms, client_cos=C,
+            phase=phase,
+            round=round_idx,
+            client_ids=np.array(ids),
+            client_norms=norms,
+            client_cos=C,
             client_cos_embed=_cos_matrix(D[:, self.embed_mask]),
-            client_sketch=self.sketch(D), **st,
+            client_sketch=self.sketch(D),
+            **st,
         )
 
     def record_clustering(self, updates, labels, signal):
@@ -224,14 +291,26 @@ class GradRecorder:
         pca2 = Uc @ Vt[:2].T
         np.savez_compressed(
             os.path.join(self.dir, "clustering.npz"),
-            labels=np.asarray(labels), cos=_cos_matrix(U), norms=np.linalg.norm(U, axis=1),
-            pca2=pca2, explained=(S[:2] ** 2) / max(float((S ** 2).sum()), EPS), signal=signal,
+            labels=np.asarray(labels),
+            cos=_cos_matrix(U),
+            norms=np.linalg.norm(U, axis=1),
+            pca2=pca2,
+            explained=(S[:2] ** 2) / max(float((S**2).sum()), EPS),
+            signal=signal,
         )
 
     # ---------------------------------------------------------- clustered
     def record_cluster_round(
-        self, round_idx, lam, R, centers_before, centers_after, avg_states, phi_parts,
-        client_states, client_stats=None,
+        self,
+        round_idx,
+        lam,
+        R,
+        centers_before,
+        centers_after,
+        avg_states,
+        phi_parts,
+        client_states,
+        client_stats=None,
     ):
         """
         centers_before / centers_after : listes de state_dicts Ω_k avant / après agrégation
@@ -245,8 +324,8 @@ class GradRecorder:
 
         before = {k: self.flat(centers_before[k]) for k in active}
         A = {k: self.flat(avg_states[k]) for k in active}
-        G = np.stack([A[k] - before[k] for k in active])                        # g_k
-        S = np.stack([self.flat(centers_after[k]) - A[k] for k in active])      # s_k
+        G = np.stack([A[k] - before[k] for k in active])  # g_k
+        S = np.stack([self.flat(centers_after[k]) - A[k] for k in active])  # s_k
 
         # Contributions c_{j→k} (espace embed) et leur décomposition
         phi = {j: (float(w), self.flat_embed(p)) for j, (w, p) in phi_parts.items()}
@@ -281,8 +360,8 @@ class GradRecorder:
             self._pending = None
 
         pending = []
-        T_same = np.full((K, K), np.nan)      # cos(know_{j→k}, g_k)   [cible, source]
-        T_raw = np.full((K, K), np.nan)       # cos(c_{j→k}, g_k)
+        T_same = np.full((K, K), np.nan)  # cos(know_{j→k}, g_k)   [cible, source]
+        T_raw = np.full((K, K), np.nan)  # cos(c_{j→k}, g_k)
         for (j, k), vec in contrib.items():
             if j == k or j not in pos:
                 continue
@@ -292,8 +371,19 @@ class GradRecorder:
             T_same[pos[k], pos[j]] = c_know
             T_raw[pos[k], pos[j]] = c_raw
             w = phi[j][0]
-            row = [round_idx, j, k, lam, w, np.linalg.norm(vec), np.linalg.norm(know[(j, k)]),
-                   np.linalg.norm(align[(j, k)]), lam * w * np.linalg.norm(gk), c_raw, c_know]
+            row = [
+                round_idx,
+                j,
+                k,
+                lam,
+                w,
+                np.linalg.norm(vec),
+                np.linalg.norm(know[(j, k)]),
+                np.linalg.norm(align[(j, k)]),
+                lam * w * np.linalg.norm(gk),
+                c_raw,
+                c_know,
+            ]
             pending.append((row, know[(j, k)], k))
         if self.deferred_transfer:
             self._pending = pending
@@ -312,15 +402,34 @@ class GradRecorder:
             Ck = Ccl[np.ix_(m, m)]
             to_cluster = _nanmean([_cos(x, g) for x in Dk]) if m.any() else np.nan
             cfl = np.linalg.norm(Dk.mean(0)) / (cnorm[m].max() + EPS) if m.any() else np.nan
-            self._csv("grad_metrics.csv", [
-                "cluster", round_idx, k, int(m.sum()), lam,
-                np.linalg.norm(g), np.linalg.norm(g[em]), np.linalg.norm(g[~em]), np.linalg.norm(s),
-                _cos(s[em], g[em]), _cos(g, Gbar), _cos(g[em], Gbar_e), _cos(g[~em], Gbar_h),
-                h, spec, _mean_offdiag(Ck), to_cluster, cfl,
-                cnorm[m].mean(), cnorm[m].max(),
-                _nanmean(st["client_g_sup_norm"][m]), _nanmean(st["client_g_prox_norm"][m]),
-                _nanmean(st["client_cos_sup_prox"][m]),
-            ])
+            self._csv(
+                "grad_metrics.csv",
+                [
+                    "cluster",
+                    round_idx,
+                    k,
+                    int(m.sum()),
+                    lam,
+                    np.linalg.norm(g),
+                    np.linalg.norm(g[em]),
+                    np.linalg.norm(g[~em]),
+                    np.linalg.norm(s),
+                    _cos(s[em], g[em]),
+                    _cos(g, Gbar),
+                    _cos(g[em], Gbar_e),
+                    _cos(g[~em], Gbar_h),
+                    h,
+                    spec,
+                    _mean_offdiag(Ck),
+                    to_cluster,
+                    cfl,
+                    cnorm[m].mean(),
+                    cnorm[m].max(),
+                    _nanmean(st["client_g_sup_norm"][m]),
+                    _nanmean(st["client_g_prox_norm"][m]),
+                    _nanmean(st["client_cos_sup_prox"][m]),
+                ],
+            )
 
         # Couches
         Lcos, Lnorm = self._layer_stats(G)
@@ -349,7 +458,7 @@ class GradRecorder:
             Vs = np.atleast_2d(Vs)
             hh = Vs @ u
             pp = Vs @ dirs.T
-            res = np.sqrt(np.maximum((Vs * Vs).sum(1) - hh ** 2 - (pp ** 2).sum(1), 0.0))
+            res = np.sqrt(np.maximum((Vs * Vs).sum(1) - hh**2 - (pp**2).sum(1), 0.0))
             return np.column_stack([pp, hh, res])  # x, y, hauteur, norme hors repère
 
         def lift(v):
@@ -366,15 +475,30 @@ class GradRecorder:
 
         np.savez_compressed(
             os.path.join(self.dir, f"cluster_{round_idx:04d}.npz"),
-            phase="cluster", round=round_idx, lam=lam, clusters=np.array(active),
-            cluster_cos=_cos_matrix(G), cluster_cos_embed=_cos_matrix(G[:, em]),
+            phase="cluster",
+            round=round_idx,
+            lam=lam,
+            clusters=np.array(active),
+            cluster_cos=_cos_matrix(G),
+            cluster_cos_embed=_cos_matrix(G[:, em]),
             cluster_cos_head=_cos_matrix(G[:, ~em]) if (~em).any() else np.zeros((K, K)),
-            layer_cos=Lcos, layer_names=np.array(list(self.groups.keys())), layer_norms=Lnorm,
-            transfer_know_same=T_same, transfer_raw_same=T_raw,
-            cone_clusters=np.column_stack([xy, heights]), cone_share=cone(S),
-            cone_clients=cone(D), cone_contrib=contrib_cone, cone_know=know_cone,
-            client_ids=np.array(ids), client_clusters=cl, client_norms=cnorm, client_cos=Ccl,
-            sketch_local=self.sketch(G), sketch_share=self.sketch(S), client_sketch=self.sketch(D),
+            layer_cos=Lcos,
+            layer_names=np.array(list(self.groups.keys())),
+            layer_norms=Lnorm,
+            transfer_know_same=T_same,
+            transfer_raw_same=T_raw,
+            cone_clusters=np.column_stack([xy, heights]),
+            cone_share=cone(S),
+            cone_clients=cone(D),
+            cone_contrib=contrib_cone,
+            cone_know=know_cone,
+            client_ids=np.array(ids),
+            client_clusters=cl,
+            client_norms=cnorm,
+            client_cos=Ccl,
+            sketch_local=self.sketch(G),
+            sketch_share=self.sketch(S),
+            client_sketch=self.sketch(D),
             **st,
         )
 
