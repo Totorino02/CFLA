@@ -105,6 +105,50 @@ class SplitCNNCifar(nn.Module):
         return self.head(self.embed(x))
 
 
+class LeNet5Cifar(nn.Module):
+    """LeNet-5 adapté à CIFAR (entrée 3 x 32 x 32)."""
+
+    def __init__(self, num_classes: int = 10):
+        super().__init__()
+        self.feature = nn.Sequential(
+            # 1
+            nn.Conv2d(in_channels=3, out_channels=6, kernel_size=5, stride=1),  # 32*32 -> 28*28
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2, stride=2),  # 14*14
+            # 2
+            nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5, stride=1),  # 10*10
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2, stride=2),  # 5*5
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_features=16 * 5 * 5, out_features=120),
+            nn.Tanh(),
+            nn.Linear(in_features=120, out_features=84),
+            nn.Tanh(),
+            nn.Linear(in_features=84, out_features=num_classes),
+        )
+
+    def forward(self, x):
+        return self.classifier(self.feature(x))
+
+
+class SplitLeNet5Cifar(nn.Module):
+    """
+    LeNet5Cifar découpé en embed (ϕ) + head (h) pour HCFL et LCFed.
+      - embed : feature + classifier[:-1]  → embedding de dimension 84
+      - head  : classifier[-1]             → Linear(84 → num_classes)
+    """
+
+    def __init__(self, num_classes: int = 10):
+        super().__init__()
+        base = LeNet5Cifar(num_classes)
+        self.embed = nn.Sequential(base.feature, *list(base.classifier.children())[:-1])
+        self.head = list(base.classifier.children())[-1]
+
+    def forward(self, x):
+        return self.head(self.embed(x))
+
 class LeNet5FEMNIST(nn.Module):
     """LeNet5 for FEMNIST (28×28 grayscale, 62 classes by default)."""
 
