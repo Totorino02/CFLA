@@ -19,3 +19,4 @@ paper
 **/experiments/scripts/main_*.py
 **/experiments/scripts/ablation*.py
 **/experiments/scripts/plot_sharing*.py
+**/experiments/scripts/plot_*.py
